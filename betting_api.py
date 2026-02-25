@@ -5,7 +5,7 @@ app = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": "*"}})
 
 PORT = 5000
-PC_IP = "10.195.205.94"
+PC_IP = "10.182.114.244"
 
 @app.route('/test', methods=['GET'])
 def test():

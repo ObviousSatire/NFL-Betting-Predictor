@@ -14,3 +14,4 @@ data class Prediction(
     val recommended_bet: String,
     val key_factor: String
 )
+

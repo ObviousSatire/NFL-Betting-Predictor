@@ -19,7 +19,7 @@
     <TextView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="10.195.205.94:5000"
+        android:text="10.182.114.244:5000"
         android:textColor="#888888"
         android:textSize="14sp"
         android:gravity="center"
@@ -66,3 +66,4 @@
             android:fontFamily="monospace"/>
     </ScrollView>
 </LinearLayout>
+

@@ -17,7 +17,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var predictButton: Button
     
     // FIXED: Correct IP address with proper dots
-    private val BASE_URL = "http://10.195.205.94:5000"
+    private val BASE_URL = "http://10.182.114.244:5000"
     
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -108,3 +108,4 @@ class MainActivity : AppCompatActivity() {
         }
     }
 }
+
