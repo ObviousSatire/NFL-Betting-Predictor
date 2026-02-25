@@ -1,0 +1,128 @@
+package com.bestg.betting
+
+import androidx.appcompat.app.AppCompatActivity
+import android.os.Bundle
+import android.widget.Button
+import android.widget.TextView
+import android.widget.Toast
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.GlobalScope
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import retrofit2.Retrofit
+import retrofit2.converter.gson.GsonConverterFactory
+import retrofit2.http.GET
+
+interface PredictionApi {
+    @GET("/predict")
+    suspend fun getPredictions(): PredictionResponse
+}
+
+data class PredictionResponse(
+    val status: String,
+    val count: Int,
+    val predictions: List<Prediction>
+)
+
+data class Prediction(
+    val home_team: String,
+    val away_team: String,
+    val predicted_winner: String,
+    val confidence: String,
+    val recommended_bet: String,
+    val key_factor: String
+)
+
+class MainActivity : AppCompatActivity() {
+    private lateinit var resultText: TextView
+    private lateinit var testButton: Button
+    private lateinit var predictButton: Button
+    
+    // Use Windows IP (10.0.0.248) instead of WSL2 IP
+    private val BASE_URL = "http://10.0.0.248:7777"
+    
+    private val retrofit = Retrofit.Builder()
+        .baseUrl(BASE_URL)
+        .addConverterFactory(GsonConverterFactory.create())
+        .build()
+    
+    private val api = retrofit.create(PredictionApi::class.java)
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setContentView(R.layout.activity_main)
+        
+        resultText = findViewById(R.id.resultText)
+        testButton = findViewById(R.id.testButton)
+        predictButton = findViewById(R.id.predictButton)
+        
+        testButton.setOnClickListener {
+            testConnection()
+        }
+        
+        predictButton.setOnClickListener {
+            getPredictions()
+        }
+        
+        // Show current URL
+        resultText.text = "API URL: $BASE_URL\n\nClick buttons to test"
+    }
+    
+    private fun testConnection() {
+        resultText.text = "Testing connection to:\n$BASE_URL"
+        
+        GlobalScope.launch(Dispatchers.Main) {
+            try {
+                val response = withContext(Dispatchers.IO) {
+                    val retrofit = Retrofit.Builder()
+                        .baseUrl(BASE_URL)
+                        .addConverterFactory(GsonConverterFactory.create())
+                        .build()
+                    
+                    val testApi = retrofit.create(PredictionApi::class.java)
+                    testApi.getPredictions()
+                }
+                
+                resultText.text = "✅ Connection SUCCESS!\n\nStatus: ${response.status}\nPredictions: ${response.count}"
+                Toast.makeText(this@MainActivity, "API Connected!", Toast.LENGTH_SHORT).show()
+            } catch (e: Exception) {
+                resultText.text = "❌ Connection FAILED\n\nError: ${e.message}\n\nMake sure:\n1. Flask is running\n2. IP is correct: 10.0.0.248\n3. Port 7777 is open"
+                Toast.makeText(this@MainActivity, "Connection failed", Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+    
+    private fun getPredictions() {
+        resultText.text = "Fetching predictions..."
+        
+        GlobalScope.launch(Dispatchers.Main) {
+            try {
+                val response = withContext(Dispatchers.IO) {
+                    api.getPredictions()
+                }
+                
+                if (response.status == "success") {
+                    val predictionsText = StringBuilder()
+                    predictionsText.append("🏈 NFL PREDICTIONS 🏈\n\n")
+                    
+                    response.predictions.forEach { prediction ->
+                        predictionsText.append("${prediction.home_team} vs ${prediction.away_team}\n")
+                        predictionsText.append("Predicted Winner: ${prediction.predicted_winner}\n")
+                        predictionsText.append("Confidence: ${prediction.confidence}\n")
+                        predictionsText.append("Bet: ${prediction.recommended_bet}\n")
+                        predictionsText.append("Key: ${prediction.key_factor}\n")
+                        predictionsText.append("─".repeat(30) + "\n")
+                    }
+                    
+                    resultText.text = predictionsText.toString()
+                    Toast.makeText(this@MainActivity, "${response.count} predictions loaded", Toast.LENGTH_SHORT).show()
+                } else {
+                    resultText.text = "Error: ${response.status}"
+                }
+            } catch (e: Exception) {
+                resultText.text = "❌ Failed to get predictions\n\nError: ${e.message}"
+                Toast.makeText(this@MainActivity, "Failed: ${e.message}", Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+}

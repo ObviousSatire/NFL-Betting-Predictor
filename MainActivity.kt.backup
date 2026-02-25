@@ -1,0 +1,22 @@
+﻿package com.bestg.betting
+
+import android.os.Bundle
+import android.widget.TextView
+import androidx.appcompat.app.AppCompatActivity
+
+class MainActivity : AppCompatActivity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        
+        // Create TextView programmatically - NO XML, NO THEME DEPENDENCIES
+        val textView = TextView(this)
+        textView.text = "✅ Betting Predictor\n\n" +
+                       "Build successful!\n" +
+                       "Ready for API integration\n" +
+                       "10.0.0.248:5000"
+        textView.textSize = 20f
+        textView.setPadding(50, 50, 50, 50)
+        
+        setContentView(textView)
+    }
+}

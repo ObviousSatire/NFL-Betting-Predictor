@@ -1,0 +1,90 @@
+﻿package com.bestg.betting
+
+import android.os.Bundle
+import android.widget.Button
+import android.widget.TextView
+import androidx.appcompat.app.AppCompatActivity
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.net.HttpURLConnection
+import java.net.URL
+
+class MainActivity : AppCompatActivity() {
+    
+    private lateinit var tvStatus: TextView
+    private lateinit var btnTest: Button
+    
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        
+        // Create simple UI programmatically
+        tvStatus = TextView(this).apply {
+            text = "🏈 NFL Betting Predictor\n\nReady to connect to Surface Pro"
+            textSize = 18f
+            setPadding(32, 64, 32, 32)
+        }
+        
+        btnTest = Button(this).apply {
+            text = "📡 Test Connection"
+            setOnClickListener { testConnection() }
+        }
+        
+        // Simple vertical layout
+        setContentView(android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.VERTICAL
+            addView(tvStatus)
+            addView(btnTest)
+        })
+    }
+    
+    private fun testConnection() {
+        tvStatus.text = "🏈 NFL Betting Predictor\n\nTesting connection to Surface Pro..."
+        
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                val url = URL("http://10.0.0.248:7777/predict")
+                val connection = url.openConnection() as HttpURLConnection
+                connection.requestMethod = "GET"
+                connection.connectTimeout = 5000
+                connection.readTimeout = 5000
+                
+                val responseCode = connection.responseCode
+                val response = if (responseCode == 200) {
+                    connection.inputStream.bufferedReader().use { it.readText() }
+                } else {
+                    "Error: HTTP $responseCode"
+                }
+                
+                connection.disconnect()
+                
+                withContext(Dispatchers.Main) {
+                    if (responseCode == 200) {
+                        tvStatus.text = "🏈 NFL Betting Predictor\n\n" +
+                                       "✅ CONNECTED TO SURFACE PRO!\n\n" +
+                                       "API: 172.17.80.1:5000\n" +
+                                       "Response:\n${response.take(200)}..."
+                    } else {
+                        tvStatus.text = "🏈 NFL Betting Predictor\n\n" +
+                                       "❌ Connection Failed\n\n" +
+                                       "Code: $responseCode\n" +
+                                       "Make sure Flask server is running"
+                    }
+                }
+                
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    tvStatus.text = "🏈 NFL Betting Predictor\n\n" +
+                                   "❌ Connection Error\n\n" +
+                                   "${e.localizedMessage}\n\n" +
+                                   "Check:\n" +
+                                   "• Surface Pro is ON\n" +
+                                   "• Flask server running\n" +
+                                   "• Same Wi-Fi network\n" +
+                                   "• Firewall allows port 5000"
+                }
+            }
+        }
+    }
+}
