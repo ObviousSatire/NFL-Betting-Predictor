@@ -72,9 +72,6 @@ NFL-Betting-Predictor/
 - **Repository**: https://github.com/ObviousSatire/NFL-Betting-Predictor
 - **Issues**: https://github.com/ObviousSatire/NFL-Betting-Predictor/issues
 
-## 📝 License
-MIT License - see [LICENSE](LICENSE) file
-
 ---
 ⭐ Star this repo if you find it useful!
 
