@@ -1,0 +1,493 @@
+package com.bestg.betting
+
+import android.os.Bundle
+import android.util.Log
+import android.view.View
+import android.widget.*
+import androidx.appcompat.app.AppCompatActivity
+import androidx.cardview.widget.CardView
+import kotlinx.coroutines.*
+import org.json.JSONObject
+import java.io.BufferedReader
+import java.io.InputStreamReader
+import java.io.OutputStreamWriter
+import java.net.HttpURLConnection
+import java.net.URL
+
+class MainActivity : AppCompatActivity() {
+    private val TAG = "MainActivity"
+    private val BASE_URL = "http://localhost:5000"
+    
+    // UI Elements
+    private lateinit var statusText: TextView
+    private lateinit var testButton: Button
+    private lateinit var teamSpinner: Spinner
+    private lateinit var playerSpinner: Spinner
+    private lateinit var loadStatsButton: Button
+    private lateinit var updateTeamButton: Button
+    private lateinit var loadPlayerButton: Button
+    private lateinit var updatePlayerButton: Button
+    private lateinit var updateFormCard: CardView
+    private lateinit var formTitle: TextView
+    private lateinit var editField1: EditText
+    private lateinit var editField2: EditText
+    private lateinit var editField3: EditText
+    private lateinit var submitUpdateButton: Button
+    private lateinit var cancelUpdateButton: Button
+    private lateinit var resultText: TextView
+    private lateinit var refreshAllButton: Button
+    private lateinit var clearButton: Button
+    private lateinit var helpButton: Button
+    private lateinit var loadingIndicator: ProgressBar
+    
+    private val coroutineScope = CoroutineScope(Dispatchers.Main)
+    
+    // Data
+    private val teams = listOf(
+        "Arizona Cardinals", "Atlanta Falcons", "Baltimore Ravens", "Buffalo Bills",
+        "Carolina Panthers", "Chicago Bears", "Cincinnati Bengals", "Cleveland Browns",
+        "Dallas Cowboys", "Denver Broncos", "Detroit Lions", "Green Bay Packers",
+        "Houston Texans", "Indianapolis Colts", "Jacksonville Jaguars", "Kansas City Chiefs",
+        "Las Vegas Raiders", "Los Angeles Chargers", "Los Angeles Rams", "Miami Dolphins",
+        "Minnesota Vikings", "New England Patriots", "New Orleans Saints", "New York Giants",
+        "New York Jets", "Philadelphia Eagles", "Pittsburgh Steelers", "San Francisco 49ers",
+        "Seattle Seahawks", "Tampa Bay Buccaneers", "Tennessee Titans", "Washington Commanders"
+    )
+    
+    private val players = listOf(
+        "Patrick Mahomes", "Josh Allen", "Lamar Jackson", "Joe Burrow",
+        "Justin Herbert", "Jalen Hurts", "Trevor Lawrence", "Dak Prescott",
+        "Christian McCaffrey", "Tyreek Hill", "Travis Kelce", "Justin Jefferson"
+    )
+    
+    private var currentUpdateMode = "team" // "team" or "player"
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setContentView(R.layout.activity_main)
+
+        initializeViews()
+        setupSpinners()
+        setupClickListeners()
+    }
+
+    private fun initializeViews() {
+        statusText = findViewById(R.id.statusText)
+        testButton = findViewById(R.id.testButton)
+        teamSpinner = findViewById(R.id.teamSpinner)
+        playerSpinner = findViewById(R.id.playerSpinner)
+        loadStatsButton = findViewById(R.id.loadStatsButton)
+        updateTeamButton = findViewById(R.id.updateTeamButton)
+        loadPlayerButton = findViewById(R.id.loadPlayerButton)
+        updatePlayerButton = findViewById(R.id.updatePlayerButton)
+        updateFormCard = findViewById(R.id.updateFormCard)
+        formTitle = findViewById(R.id.formTitle)
+        editField1 = findViewById(R.id.editField1)
+        editField2 = findViewById(R.id.editField2)
+        editField3 = findViewById(R.id.editField3)
+        submitUpdateButton = findViewById(R.id.submitUpdateButton)
+        cancelUpdateButton = findViewById(R.id.cancelUpdateButton)
+        resultText = findViewById(R.id.resultText)
+        refreshAllButton = findViewById(R.id.refreshAllButton)
+        clearButton = findViewById(R.id.clearButton)
+        helpButton = findViewById(R.id.helpButton)
+        loadingIndicator = findViewById(R.id.loadingIndicator)
+    }
+
+    private fun setupSpinners() {
+        // Team spinner
+        ArrayAdapter(this, android.R.layout.simple_spinner_item, teams).also { adapter ->
+            adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+            teamSpinner.adapter = adapter
+        }
+
+        // Player spinner
+        ArrayAdapter(this, android.R.layout.simple_spinner_item, players).also { adapter ->
+            adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+            playerSpinner.adapter = adapter
+        }
+    }
+
+    private fun setupClickListeners() {
+        testButton.setOnClickListener { testConnection() }
+        loadStatsButton.setOnClickListener { loadTeamStats() }
+        updateTeamButton.setOnClickListener { showTeamUpdateForm() }
+        loadPlayerButton.setOnClickListener { loadPlayerStats() }
+        updatePlayerButton.setOnClickListener { showPlayerUpdateForm() }
+        submitUpdateButton.setOnClickListener { submitUpdate() }
+        cancelUpdateButton.setOnClickListener { hideUpdateForm() }
+        refreshAllButton.setOnClickListener { refreshAll() }
+        clearButton.setOnClickListener { clearResults() }
+        helpButton.setOnClickListener { showHelp() }
+    }
+
+    private fun testConnection() {
+        showLoading(true)
+        resultText.text = "Testing connection..."
+        
+        coroutineScope.launch {
+            val result = withContext(Dispatchers.IO) {
+                try {
+                    val url = URL("/test")
+                    val connection = url.openConnection() as HttpURLConnection
+                    connection.requestMethod = "GET"
+                    connection.connectTimeout = 5000
+                    connection.readTimeout = 5000
+
+                    val responseCode = connection.responseCode
+                    if (responseCode == HttpURLConnection.HTTP_OK) {
+                        val reader = BufferedReader(InputStreamReader(connection.inputStream))
+                        val response = StringBuilder()
+                        var line: String?
+                        while (reader.readLine().also { line = it } != null) {
+                            response.append(line)
+                        }
+                        reader.close()
+                        "? Connected! "
+                    } else {
+                        "? HTTP Error: "
+                    }
+                } catch (e: Exception) {
+                    "? Error: "
+                }
+            }
+            showLoading(false)
+            resultText.text = result
+            statusText.text = if (result.contains("?")) "? CONNECTED" else "? FAILED"
+        }
+    }
+
+    private fun loadTeamStats() {
+        val selectedTeam = teamSpinner.selectedItem?.toString() ?: return
+        showLoading(true)
+        resultText.text = "Loading  stats..."
+        
+        coroutineScope.launch {
+            val result = withContext(Dispatchers.IO) {
+                try {
+                    val url = URL("/team_stats?team=")
+                    val connection = url.openConnection() as HttpURLConnection
+                    connection.requestMethod = "GET"
+                    connection.connectTimeout = 5000
+                    connection.readTimeout = 5000
+
+                    val responseCode = connection.responseCode
+                    if (responseCode == HttpURLConnection.HTTP_OK) {
+                        val reader = BufferedReader(InputStreamReader(connection.inputStream))
+                        val response = StringBuilder()
+                        var line: String?
+                        while (reader.readLine().also { line = it } != null) {
+                            response.append(line)
+                        }
+                        reader.close()
+                        formatTeamStats(selectedTeam, response.toString())
+                    } else {
+                        "? HTTP Error: "
+                    }
+                } catch (e: Exception) {
+                    "? Error: "
+                }
+            }
+            showLoading(false)
+            resultText.text = result
+        }
+    }
+
+    private fun loadPlayerStats() {
+        val selectedPlayer = playerSpinner.selectedItem?.toString() ?: return
+        showLoading(true)
+        resultText.text = "Loading  stats..."
+        
+        coroutineScope.launch {
+            val result = withContext(Dispatchers.IO) {
+                try {
+                    val url = URL("/player_stats?name=")
+                    val connection = url.openConnection() as HttpURLConnection
+                    connection.requestMethod = "GET"
+                    connection.connectTimeout = 5000
+                    connection.readTimeout = 5000
+
+                    val responseCode = connection.responseCode
+                    if (responseCode == HttpURLConnection.HTTP_OK) {
+                        val reader = BufferedReader(InputStreamReader(connection.inputStream))
+                        val response = StringBuilder()
+                        var line: String?
+                        while (reader.readLine().also { line = it } != null) {
+                            response.append(line)
+                        }
+                        reader.close()
+                        formatPlayerStats(selectedPlayer, response.toString())
+                    } else {
+                        "? HTTP Error: "
+                    }
+                } catch (e: Exception) {
+                    "? Error: "
+                }
+            }
+            showLoading(false)
+            resultText.text = result
+        }
+    }
+
+    private fun showTeamUpdateForm() {
+        currentUpdateMode = "team"
+        formTitle.text = "?? UPDATE TEAM: "
+        editField1.hint = "Wins"
+        editField2.hint = "Losses"
+        editField3.hint = "Points Per Game"
+        editField1.setText("")
+        editField2.setText("")
+        editField3.setText("")
+        updateFormCard.visibility = View.VISIBLE
+    }
+
+    private fun showPlayerUpdateForm() {
+        currentUpdateMode = "player"
+        formTitle.text = "?? UPDATE PLAYER: "
+        editField1.hint = "Touchdowns"
+        editField2.hint = "Yards"
+        editField3.hint = "Completion %"
+        editField1.setText("")
+        editField2.setText("")
+        editField3.setText("")
+        updateFormCard.visibility = View.VISIBLE
+    }
+
+    private fun hideUpdateForm() {
+        updateFormCard.visibility = View.GONE
+    }
+
+    private fun submitUpdate() {
+        when (currentUpdateMode) {
+            "team" -> updateTeamStats()
+            "player" -> updatePlayerStats()
+        }
+    }
+
+    private fun updateTeamStats() {
+        val team = teamSpinner.selectedItem?.toString() ?: return
+        val wins = editField1.text.toString()
+        val losses = editField2.text.toString()
+        val ppg = editField3.text.toString()
+
+        if (wins.isEmpty() || losses.isEmpty() || ppg.isEmpty()) {
+            Toast.makeText(this, "Please fill all fields", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        showLoading(true)
+        resultText.text = "Updating ..."
+
+        coroutineScope.launch {
+            val result = withContext(Dispatchers.IO) {
+                try {
+                    val url = URL("/update_team")
+                    val connection = url.openConnection() as HttpURLConnection
+                    connection.requestMethod = "POST"
+                    connection.connectTimeout = 5000
+                    connection.readTimeout = 5000
+                    connection.doOutput = true
+                    connection.setRequestProperty("Content-Type", "application/json")
+
+                    val json = JSONObject().apply {
+                        put("team", team)
+                        put("wins", wins.toInt())
+                        put("losses", losses.toInt())
+                        put("ppg", ppg.toDouble())
+                    }
+
+                    OutputStreamWriter(connection.outputStream).use {
+                        it.write(json.toString())
+                        it.flush()
+                    }
+
+                    val responseCode = connection.responseCode
+                    if (responseCode == HttpURLConnection.HTTP_OK) {
+                        val reader = BufferedReader(InputStreamReader(connection.inputStream))
+                        val response = StringBuilder()
+                        var line: String?
+                        while (reader.readLine().also { line = it } != null) {
+                            response.append(line)
+                        }
+                        reader.close()
+                        "? Team updated successfully!\n"
+                    } else {
+                        "? HTTP Error: "
+                    }
+                } catch (e: Exception) {
+                    "? Error: "
+                }
+            }
+            showLoading(false)
+            hideUpdateForm()
+            resultText.text = result
+        }
+    }
+
+    private fun updatePlayerStats() {
+        val player = playerSpinner.selectedItem?.toString() ?: return
+        val tds = editField1.text.toString()
+        val yards = editField2.text.toString()
+        val comp = editField3.text.toString()
+
+        if (tds.isEmpty() || yards.isEmpty() || comp.isEmpty()) {
+            Toast.makeText(this, "Please fill all fields", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        showLoading(true)
+        resultText.text = "Updating ..."
+
+        coroutineScope.launch {
+            val result = withContext(Dispatchers.IO) {
+                try {
+                    val url = URL("/update_player")
+                    val connection = url.openConnection() as HttpURLConnection
+                    connection.requestMethod = "POST"
+                    connection.connectTimeout = 5000
+                    connection.readTimeout = 5000
+                    connection.doOutput = true
+                    connection.setRequestProperty("Content-Type", "application/json")
+
+                    val json = JSONObject().apply {
+                        put("name", player)
+                        put("touchdowns", tds.toInt())
+                        put("yards", yards.toInt())
+                        put("completion_pct", comp.toDouble())
+                    }
+
+                    OutputStreamWriter(connection.outputStream).use {
+                        it.write(json.toString())
+                        it.flush()
+                    }
+
+                    val responseCode = connection.responseCode
+                    if (responseCode == HttpURLConnection.HTTP_OK) {
+                        val reader = BufferedReader(InputStreamReader(connection.inputStream))
+                        val response = StringBuilder()
+                        var line: String?
+                        while (reader.readLine().also { line = it } != null) {
+                            response.append(line)
+                        }
+                        reader.close()
+                        "? Player updated successfully!\n"
+                    } else {
+                        "? HTTP Error: "
+                    }
+                } catch (e: Exception) {
+                    "? Error: "
+                }
+            }
+            showLoading(false)
+            hideUpdateForm()
+            resultText.text = result
+        }
+    }
+
+    private fun formatTeamStats(team: String, jsonResponse: String): String {
+        return try {
+            val json = JSONObject(jsonResponse)
+            """
+                ??? 
+                --------------------
+                ?? Season Stats:
+                • Wins: 
+                • Losses: 
+                • Points/Game: 
+                
+                ?? Offense:
+                • Total Yards: 
+                • Passing Yards: 
+                • Rushing Yards: 
+                
+                ??? Defense:
+                • Points Allowed: 
+                • Sacks: 
+                • Interceptions: 
+                
+                ?? Betting Trends:
+                • ATS Record: 
+                • Over/Under: 
+            """.trimIndent()
+        } catch (e: Exception) {
+            "Error formatting team stats: "
+        }
+    }
+
+    private fun formatPlayerStats(player: String, jsonResponse: String): String {
+        return try {
+            val json = JSONObject(jsonResponse)
+            """
+                ?? 
+                --------------------
+                ?? Season Stats:
+                • Games: 
+                • Touchdowns: 
+                • Yards: 
+                
+                ?? Advanced:
+                • Yards/Game: 
+                • Completion %: %
+                • QB Rating: 
+                
+                ?? Betting Impact:
+                • Prop Bets: 
+            """.trimIndent()
+        } catch (e: Exception) {
+            "Error formatting player stats: "
+        }
+    }
+
+    private fun refreshAll() {
+        showLoading(true)
+        resultText.text = "Refreshing all data..."
+        testConnection()
+    }
+
+    private fun clearResults() {
+        resultText.text = "Ready..."
+        statusText.text = "Status: Unknown"
+    }
+
+    private fun showHelp() {
+        resultText.text = """
+            ?? HELP GUIDE
+            --------------------
+            
+            ?? CONNECTION:
+            • Click TEST to verify API connection
+            
+            ?? TEAM STATS:
+            • Select team from dropdown
+            • Click LOAD STATS to view
+            • Click UPDATE TEAM to edit
+            
+            ?? PLAYER STATS:
+            • Select player from dropdown
+            • Click LOAD PLAYER to view
+            • Click UPDATE PLAYER to edit
+            
+            ?? UPDATING:
+            • Fill all fields in the form
+            • Click SUBMIT to save
+            • Click CANCEL to discard
+            
+            ?? TIPS:
+            • Use REFRESH to reload
+            • CLEAR to reset display
+            • Loading indicator shows when busy
+        """.trimIndent()
+    }
+
+    private fun showLoading(show: Boolean) {
+        loadingIndicator.visibility = if (show) View.VISIBLE else View.GONE
+        testButton.isEnabled = !show
+        loadStatsButton.isEnabled = !show
+        loadPlayerButton.isEnabled = !show
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        coroutineScope.cancel()
+    }
+}

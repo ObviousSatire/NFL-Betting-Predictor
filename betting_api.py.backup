@@ -7,27 +7,12 @@ import time
 app = Flask(__name__)
 CORS(app)
 
-# YOUR Tomorrow.io API Key
-TOMORROW_API_KEY = "4jUTfSnJ2t7VJjG5zRKh5gR6K8m2JhyM"
-
 # Cache to avoid hitting ESPN rate limits
 cache = {}
 cache_timeout = 300  # 5 minutes
 
 # ESPN API base URL
 ESPN_BASE = "https://site.api.espn.com/apis/site/v2/sports/football/nfl"
-
-# Stadium locations for weather
-STADIUM_LOCATIONS = {
-    "Buffalo Bills": {"city": "Buffalo", "lat": 42.7738, "lon": -78.7870, "stadium": "Highmark Stadium"},
-    "Kansas City Chiefs": {"city": "Kansas City", "lat": 39.0489, "lon": -94.4839, "stadium": "Arrowhead Stadium"},
-    "San Francisco 49ers": {"city": "Santa Clara", "lat": 37.4031, "lon": -121.9698, "stadium": "Levi's Stadium"},
-    "Philadelphia Eagles": {"city": "Philadelphia", "lat": 39.9011, "lon": -75.1677, "stadium": "Lincoln Financial Field"},
-    "Dallas Cowboys": {"city": "Arlington", "lat": 32.7473, "lon": -97.0945, "stadium": "AT&T Stadium"},
-    "Baltimore Ravens": {"city": "Baltimore", "lat": 39.2780, "lon": -76.6227, "stadium": "M&T Bank Stadium"},
-    "Cincinnati Bengals": {"city": "Cincinnati", "lat": 39.0954, "lon": -84.5161, "stadium": "Paycor Stadium"},
-    "Miami Dolphins": {"city": "Miami", "lat": 25.9580, "lon": -80.2389, "stadium": "Hard Rock Stadium"}
-}
 
 # Team mapping for ESPN
 TEAM_MAP = {
@@ -81,77 +66,9 @@ def get_cached_or_fetch(url, cache_key):
         print(f"Error fetching {url}: {e}")
         return None
 
-def get_weather_from_api(team_name):
-    """Fetch real weather data from Tomorrow.io API"""
-    if team_name not in STADIUM_LOCATIONS:
-        return None
-    
-    location = STADIUM_LOCATIONS[team_name]
-    
-    try:
-        url = f"https://api.tomorrow.io/v4/timelines"
-        params = {
-            "location": f"{location['lat']},{location['lon']}",
-            "fields": ["temperature", "weatherCode", "windSpeed", "precipitationProbability", "humidity"],
-            "timesteps": "current",
-            "units": "imperial",
-            "apikey": TOMORROW_API_KEY
-        }
-        
-        response = requests.get(url, params=params, timeout=5)
-        if response.status_code == 200:
-            data = response.json()
-            current = data['data']['timelines'][0]['intervals'][0]['values']
-            
-            # Map weather codes to conditions
-            weather_codes = {
-                1000: "Clear",
-                1100: "Mostly Clear",
-                1101: "Partly Cloudy",
-                1102: "Mostly Cloudy",
-                1001: "Cloudy",
-                4000: "Rain",
-                4200: "Light Rain",
-                4201: "Heavy Rain",
-                5000: "Snow",
-                5100: "Light Snow",
-                5101: "Heavy Snow",
-                8000: "Thunderstorm"
-            }
-            conditions = weather_codes.get(current.get('weatherCode', 1000), "Unknown")
-            
-            # Determine impact
-            impact = "Minimal impact on gameplay"
-            if current.get('windSpeed', 0) > 20:
-                impact = "HIGH WIND - Major impact on passing/kicking"
-            elif current.get('windSpeed', 0) > 15:
-                impact = "Moderate wind - May affect deep passes"
-            elif current.get('precipitationProbability', 0) > 70:
-                impact = "Heavy rain - Slippery conditions expected"
-            elif current.get('precipitationProbability', 0) > 40:
-                impact = "Chance of rain - May affect grip"
-            elif current.get('temperature', 45) < 32:
-                impact = "Freezing temperatures - Ball hardness affected"
-            
-            return {
-                "temperature": round(current.get('temperature', 45)),
-                "conditions": conditions,
-                "wind_speed": round(current.get('windSpeed', 10)),
-                "precipitation": current.get('precipitationProbability', 0),
-                "humidity": current.get('humidity', 60),
-                "city": location["city"],
-                "stadium": location["stadium"],
-                "impact": impact
-            }
-        else:
-            return None
-    except Exception as e:
-        print(f"Weather API error: {e}")
-        return None
-
 @app.route('/test', methods=['GET'])
 def test():
-    return jsonify({"status": "ok", "message": "ESPN + Tomorrow.io API Connected"})
+    return jsonify({"status": "ok", "message": "ESPN API Connected"})
 
 @app.route('/team_stats', methods=['GET'])
 def get_team_stats():
@@ -169,18 +86,19 @@ def get_team_stats():
     if not data:
         return jsonify({"error": "Could not fetch team data"}), 500
     
+    # Extract relevant stats
+    team_data = data.get('team', {})
+    
     # Get standings data
     standings_url = f"{ESPN_BASE}/standings"
     standings = get_cached_or_fetch(standings_url, "standings")
     
     record = "0-0"
     streak = "N/A"
-    wins = 0
-    losses = 0
     
     if standings:
         for entry in standings.get('standings', {}).get('entries', []):
-            if entry.get('team', {}).get('id') == data.get('team', {}).get('id'):
+            if entry.get('team', {}).get('id') == team_data.get('id'):
                 stats = entry.get('stats', [])
                 for stat in stats:
                     if stat.get('name') == 'wins':
@@ -191,21 +109,13 @@ def get_team_stats():
                         streak = stat.get('displayValue', 'N/A')
                 record = f"{wins}-{losses}"
     
-    # Get weather
-    weather = get_weather_from_api(team)
-    
-    response = {
+    return jsonify({
         "team": team,
         "record": record,
         "streak": streak,
-        "points_for": wins * 24,  # Approximate
-        "points_against": losses * 20  # Approximate
-    }
-    
-    if weather:
-        response['weather'] = weather
-    
-    return jsonify(response)
+        "points_for": "N/A from ESPN",
+        "points_against": "N/A from ESPN"
+    })
 
 @app.route('/player_stats', methods=['GET'])
 def get_player_stats():
@@ -232,53 +142,31 @@ def get_player_stats():
                         "position": athlete.get('position', {}).get('abbreviation', 'N/A'),
                         "team": team['team']['displayName'],
                         "jersey": athlete.get('jersey', 'N/A'),
-                        "injured": False,
-                        "stats": {
-                            "passing_yards": "N/A",
-                            "touchdowns": "N/A",
-                            "interceptions": "N/A"
-                        }
+                        "injured": False  # ESPN doesn't provide this directly
                     })
     
     return jsonify({"error": "Player not found"}), 404
-
-@app.route('/weather', methods=['GET'])
-def get_weather():
-    team = request.args.get('team')
-    
-    if not team:
-        return jsonify({"error": "Team parameter required"}), 400
-    
-    weather = get_weather_from_api(team)
-    if weather:
-        return jsonify(weather)
-    
-    return jsonify({"error": "Weather data not available"}), 404
 
 @app.route('/injuries', methods=['GET'])
 def get_injuries():
     team = request.args.get('team')
     
-    # ESPN injuries endpoint
+    # ESPN has an injuries endpoint
     url = f"{ESPN_BASE}/injuries"
     injuries_data = get_cached_or_fetch(url, "all_injuries")
     
     if not injuries_data:
         return jsonify({"error": "Could not fetch injuries"}), 500
     
+    # Filter for specific team if requested
     all_injuries = []
     for injury in injuries_data.get('injuries', []):
         if not team or team.lower() in injury.get('team', {}).get('name', '').lower():
-            status = injury.get('status', 'Unknown')
-            # Convert status to emoji
-            status_emoji = "❌" if status == "Out" else "⚠️" if status == "Questionable" else "✅"
-            
             all_injuries.append({
                 "player": injury.get('athlete', {}).get('fullName', 'Unknown'),
                 "position": injury.get('athlete', {}).get('position', {}).get('abbreviation', 'N/A'),
                 "injury": injury.get('injury', {}).get('type', 'Unknown'),
-                "status": status,
-                "status_emoji": status_emoji
+                "status": injury.get('status', 'Unknown')
             })
     
     return jsonify({
@@ -290,9 +178,10 @@ def get_injuries():
 def get_news():
     entity = request.args.get('entity', '')
     
+    # ESPN news endpoint
     url = f"{ESPN_BASE}/news"
-    if entity and entity in TEAM_MAP:
-        url += f"?team={TEAM_MAP[entity]}"
+    if entity:
+        url += f"?team={TEAM_MAP.get(entity, '')}"
     
     news_data = get_cached_or_fetch(url, f"news_{entity}")
     
@@ -303,7 +192,7 @@ def get_news():
     for article in news_data.get('articles', [])[:10]:
         articles.append({
             "headline": article.get('headline', 'No headline'),
-            "date": article.get('published', '').split('T')[0] if article.get('published') else '',
+            "date": article.get('published', ''),
             "source": "ESPN",
             "description": article.get('description', '')
         })
@@ -317,6 +206,7 @@ def get_win_loss():
     if team not in TEAM_MAP:
         return jsonify({"error": "Team not found"}), 404
     
+    # Get standings
     url = f"{ESPN_BASE}/standings"
     standings = get_cached_or_fetch(url, "standings")
     
@@ -325,36 +215,105 @@ def get_win_loss():
     
     for entry in standings.get('standings', {}).get('entries', []):
         if entry.get('team', {}).get('name') == team:
-            stats_dict = {}
+            stats = {}
             for stat in entry.get('stats', []):
-                stats_dict[stat.get('name')] = stat.get('displayValue', 'N/A')
+                stats[stat.get('name')] = stat.get('displayValue', 'N/A')
             
-            # Get last 5 games (not directly from ESPN, using mock)
-            last_5 = ["W", "L", "W", "W", "L"]
-            
+            # Get last 5 games (not directly from ESPN)
             return jsonify({
-                "season_record": stats_dict.get('vsPlayoffs', 'N/A'),
-                "win_percentage": float(stats_dict.get('winPercent', '0').replace('%', '')) / 100 if stats_dict.get('winPercent') else 0.5,
-                "current_streak": stats_dict.get('streak', 'N/A'),
-                "last_5_games": last_5,
-                "home_record": stats_dict.get('homeRecord', 'N/A'),
-                "away_record": stats_dict.get('awayRecord', 'N/A'),
-                "division_record": stats_dict.get('divisionRecord', 'N/A')
+                "season_record": stats.get('vsPlayoffs', 'N/A'),
+                "win_percentage": 0.0,
+                "current_streak": stats.get('streak', 'N/A'),
+                "last_5_games": ["W", "L", "W", "L", "W"],  # Placeholder
+                "home_record": stats.get('homeRecord', 'N/A'),
+                "away_record": stats.get('awayRecord', 'N/A'),
+                "division_record": stats.get('divisionRecord', 'N/A')
             })
     
     return jsonify({"error": "Team not found in standings"}), 404
 
+@app.route('/weather', methods=['GET'])
+def get_weather():
+    team = request.args.get('team')
+    
+    # Use National Weather Service API (free, no key)
+    stadiums = {
+        "Buffalo Bills": {"lat": 42.7738, "lon": -78.7870},
+        "Kansas City Chiefs": {"lat": 39.0489, "lon": -94.4839},
+        "San Francisco 49ers": {"lat": 37.4031, "lon": -121.9698},
+        "Philadelphia Eagles": {"lat": 39.9011, "lon": -75.1677},
+        "Dallas Cowboys": {"lat": 32.7473, "lon": -97.0945},
+        "Baltimore Ravens": {"lat": 39.2780, "lon": -76.6227},
+        "Cincinnati Bengals": {"lat": 39.0954, "lon": -84.5161},
+        "Miami Dolphins": {"lat": 25.9580, "lon": -80.2389}
+    }
+    
+    if team not in stadiums:
+        return jsonify({"error": "Team not found"}), 404
+    
+    lat, lon = stadiums[team]["lat"], stadiums[team]["lon"]
+    
+    try:
+        # Get forecast URL from NWS
+        points_url = f"https://api.weather.gov/points/{lat},{lon}"
+        points_response = requests.get(points_url, headers={"User-Agent": "NFL Betting App"})
+        forecast_url = points_response.json()['properties']['forecastHourly']
+        
+        # Get actual weather
+        weather_response = requests.get(forecast_url, headers={"User-Agent": "NFL Betting App"})
+        periods = weather_response.json()['properties']['periods']
+        
+        if periods:
+            current = periods[0]
+            
+            # Calculate impact
+            temp = current['temperature']
+            wind = int(current.get('windSpeed', '0 mph').split()[0])
+            precip = current.get('probabilityOfPrecipitation', {}).get('value', 0)
+            
+            if wind > 20:
+                impact = "⚠️ HIGH WIND - Major passing/kicking impact"
+            elif wind > 15:
+                impact = "🌬️ Moderate wind - May affect deep passes"
+            elif precip > 70:
+                impact = "🌧️ Heavy rain - Slippery conditions"
+            elif precip > 40:
+                impact = "☔ Chance of rain - May affect grip"
+            elif temp < 32:
+                impact = "❄️ Freezing - Ball hardness affected"
+            else:
+                impact = "✅ Good weather - Minimal impact"
+            
+            return jsonify({
+                "temperature": current['temperature'],
+                "conditions": current['shortForecast'],
+                "wind_speed": current['windSpeed'],
+                "precipitation": precip,
+                "humidity": "N/A",
+                "stadium": team,
+                "impact": impact
+            })
+    except Exception as e:
+        return jsonify({
+            "error": "Weather unavailable",
+            "mock": True,
+            "temperature": 45,
+            "conditions": "Partly Cloudy",
+            "wind_speed": "10 mph",
+            "precipitation": 20,
+            "impact": "Mock data - NWS unavailable"
+        }), 200
+
 if __name__ == '__main__':
-    print("🏈 NFL BETTING API WITH ESPN + TOMORROW.IO")
-    print("📡 Using ESPN API for stats (completely free)")
-    print(f"☁️ Using Tomorrow.io for weather (API key: {TOMORROW_API_KEY[:5]}...)")
+    print("🏈 NFL BETTING API WITH ESPN DATA")
+    print("📡 Using ESPN API (completely free)")
     print("🚀 Server running at http://localhost:5000")
     print("\n📊 Endpoints available:")
     print("   GET /test")
     print("   GET /team_stats?team=Buffalo%20Bills")
     print("   GET /player_stats?name=Josh%20Allen")
-    print("   GET /weather?team=Buffalo%20Bills")
     print("   GET /injuries?team=Buffalo%20Bills")
     print("   GET /news?entity=Buffalo%20Bills")
     print("   GET /win_loss?team=Buffalo%20Bills")
+    print("   GET /weather?team=Buffalo%20Bills")
     app.run(host='0.0.0.0', port=5000, debug=True)
