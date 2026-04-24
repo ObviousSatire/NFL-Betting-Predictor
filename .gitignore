@@ -68,3 +68,10 @@ betting_api.pyc
 # Don't upload APK files
 app/build/
 app/build/outputs/
+
+*.backup
+*.backup2
+*_backup.py
+crash.txt
+app_logs.txt
+*.log
