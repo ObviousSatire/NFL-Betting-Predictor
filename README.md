@@ -19,6 +19,10 @@ Android app that connects to a Python Flask API to get NFL game predictions.
 python betting_api.py
 ```
 
+
+cd C:\Users\Bestg\AndroidStudioProjects\BettingPredictor; python betting_api.py
+
+
 ### 2. Install the Android app
 ```bash
 cd NFL-Betting-Predictor
