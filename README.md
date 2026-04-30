@@ -93,3 +93,13 @@ python betting_api.py
 ```
 
 **Your GitHub repo is live at:** https://github.com/ObviousSatire/NFL-Betting-Predictor
+
+# NFL Betting Predictor
+
+Android app for NFL team stats, player stats, weather, injuries, news, and win predictions.
+
+## Download
+[Download Latest APK](NFL-Betting-Predictor.apk)
+
+## Setup
+Requires Python Flask server (betting_api.py) running on same network.
