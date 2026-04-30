@@ -64,7 +64,7 @@ NFL-Betting-Predictor/
 
 ## 🎯 Quick Start
 1. Clone the repo: `git clone https://github.com/ObviousSatire/NFL-Betting-Predictor.git`
-2. Start API: `python betting_api.py`
+2. Start API: `cd C:\Users\Bestg\AndroidStudioProjects\BettingPredictor; python betting_api.py`
 3. Build app: `./gradlew assembleDebug`
 4. Install on phone: `adb install app/build/outputs/apk/debug/app-debug.apk`
 
