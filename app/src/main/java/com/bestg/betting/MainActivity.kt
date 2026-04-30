@@ -60,7 +60,7 @@ class MainActivity : AppCompatActivity() {
         resultText.movementMethod = ScrollingMovementMethod()
         
         val retrofit = Retrofit.Builder()
-            .baseUrl("http://10.53.155.182:5000/")
+            .baseUrl("http://10.0.0.248:5000/")
             .addConverterFactory(GsonConverterFactory.create())
             .build()
         
