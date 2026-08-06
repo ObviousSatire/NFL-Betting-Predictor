@@ -31,6 +31,7 @@ class MainActivity : AppCompatActivity() {
     private var currentTeam = ""
     private var currentPlayer = ""
     private var opponentTeam = ""
+    private var serverIp = "10.0.0.60"
     
     private val allNFLTeams = listOf(
         "Buffalo Bills", "Miami Dolphins", "New England Patriots", "New York Jets",
@@ -52,6 +53,9 @@ class MainActivity : AppCompatActivity() {
         sharedPrefs = getSharedPreferences("NFL_Betting_Prefs", Context.MODE_PRIVATE)
         loadManualOverrides()
         
+        // Load saved IP, default to 10.0.0.60
+        serverIp = sharedPrefs.getString("server_ip", "10.0.0.60") ?: "10.0.0.60"
+        
         teamSpinner = findViewById(R.id.teamSpinner)
         playerSpinner = findViewById(R.id.playerSpinner)
         resultText = findViewById(R.id.resultText)
@@ -59,12 +63,7 @@ class MainActivity : AppCompatActivity() {
         
         resultText.movementMethod = ScrollingMovementMethod()
         
-        val retrofit = Retrofit.Builder()
-            .baseUrl("http://10.0.0.248:5000/")
-            .addConverterFactory(GsonConverterFactory.create())
-            .build()
-        
-        apiService = retrofit.create(ApiService::class.java)
+        setupRetrofit()
         
         playerSpinner.visibility = View.GONE
         
@@ -85,13 +84,61 @@ class MainActivity : AppCompatActivity() {
         findViewById<MaterialButton>(R.id.helpButton).setOnClickListener { showHelp() }
         
         findViewById<MaterialButton>(R.id.helpButton).setOnLongClickListener {
-            if (currentMode == "STATS") showManualOverrideDialog()
-            else Toast.makeText(this, "Manual override only available in Stats Mode", Toast.LENGTH_SHORT).show()
+            showOptionsDialog()
             true
         }
         
         setStatsMode()
         Handler(Looper.getMainLooper()).postDelayed({ getTeamStats() }, 500)
+    }
+    
+    private fun setupRetrofit() {
+        val retrofit = Retrofit.Builder()
+            .baseUrl("http://$serverIp:5000/")
+            .addConverterFactory(GsonConverterFactory.create())
+            .build()
+        apiService = retrofit.create(ApiService::class.java)
+    }
+    
+    private fun showOptionsDialog() {
+        val options = if (currentMode == "STATS") {
+            arrayOf("Change Server IP", "Manual Override Stats")
+        } else {
+            arrayOf("Change Server IP")
+        }
+        
+        AlertDialog.Builder(this)
+            .setTitle("Options")
+            .setItems(options) { _, which ->
+                if (options[which] == "Change Server IP") {
+                    showServerIpDialog()
+                } else {
+                    showManualOverrideDialog()
+                }
+            }
+            .show()
+    }
+    
+    private fun showServerIpDialog() {
+        val input = EditText(this)
+        input.setText(serverIp)
+        input.hint = "Enter server IP"
+        
+        AlertDialog.Builder(this)
+            .setTitle("Set Server IP")
+            .setMessage("Current: $serverIp:5000\nEnter new IP address:")
+            .setView(input)
+            .setPositiveButton("Save & Test") { _, _ ->
+                val newIp = input.text.toString().trim()
+                if (newIp.isNotBlank()) {
+                    serverIp = newIp
+                    sharedPrefs.edit().putString("server_ip", newIp).apply()
+                    setupRetrofit()
+                    testConnection()
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
     }
     
     private fun setStatsMode() {
@@ -252,7 +299,6 @@ class MainActivity : AppCompatActivity() {
             return
         }
         
-        // Fetch ALL data - stats, weather, injuries, news - and display together
         apiService.getTeamStats(team).enqueue(object : Callback<TeamStatsResponse> {
             override fun onResponse(call: Call<TeamStatsResponse>, response: Response<TeamStatsResponse>) {
                 val stats = response.body()
@@ -269,12 +315,10 @@ class MainActivity : AppCompatActivity() {
                                             override fun onResponse(call: Call<NewsResponse>, newsResponse: Response<NewsResponse>) {
                                                 showLoading(false)
                                                 val news = newsResponse.body()
-                                                Log.d("NEWS", "News received: ${news?.news?.size} articles")
                                                 displayFullStats(team, stats, wl, weather, injuries, news)
                                             }
                                             override fun onFailure(call: Call<NewsResponse>, t: Throwable) {
                                                 showLoading(false)
-                                                Log.e("NEWS", "News failed: ${t.message}")
                                                 displayFullStats(team, stats, wl, weather, injuries, null)
                                             }
                                         })
@@ -311,7 +355,6 @@ class MainActivity : AppCompatActivity() {
         sb.append("$team\n")
         sb.append("==============================\n\n")
         
-        // Team Stats
         sb.append("[ TEAM STATS ]\n")
         if (stats != null && wl != null) {
             val winPercent = (wl.win_percentage ?: 0.0) * 100
@@ -334,7 +377,6 @@ class MainActivity : AppCompatActivity() {
         }
         sb.append("\n")
         
-        // Weather
         sb.append("[ WEATHER ]\n")
         if (weather != null) {
             sb.append("${weather.stadium ?: team}\n")
@@ -347,7 +389,6 @@ class MainActivity : AppCompatActivity() {
         }
         sb.append("\n")
         
-        // Injuries
         sb.append("[ INJURIES ]\n")
         if (injuries != null && injuries.injuries != null && injuries.injuries!!.isNotEmpty()) {
             val items = injuries.injuries!!
@@ -361,7 +402,6 @@ class MainActivity : AppCompatActivity() {
         }
         sb.append("\n")
         
-        // News - FIXED
         sb.append("[ LATEST NEWS ]\n")
         if (news != null && news.news != null && news.news!!.isNotEmpty()) {
             val items = news.news!!
@@ -661,27 +701,28 @@ class MainActivity : AppCompatActivity() {
         apiService.testConnection().enqueue(object : Callback<TestResponse> {
             override fun onResponse(call: Call<TestResponse>, response: Response<TestResponse>) {
                 showLoading(false)
-                resultText.text = if (response.isSuccessful) "API Connected" else "Server error"
+                val ipInfo = "Server: $serverIp:5000\n\n"
+                resultText.text = if (response.isSuccessful) "${ipInfo}API Connected" else "${ipInfo}Server error"
             }
             override fun onFailure(call: Call<TestResponse>, t: Throwable) {
                 showLoading(false)
-                resultText.text = "Cannot reach server"
+                resultText.text = "Cannot reach server at $serverIp:5000"
             }
         })
     }
     
     private fun showHelp() {
         resultText.text = """
-            HELP
+            HELP - Server: $serverIp:5000
             ==============================
             
             MODES:
-            STATS - Team info, weather, injuries
+            STATS - Team info, weather, injuries, news
             PLAYER - Full player stats
             PREDICT - AI win prediction
             
-            Long press HELP in Stats Mode
-            for manual override
+            LONG PRESS HELP:
+            Change server IP or manual override
         """.trimIndent()
     }
     
