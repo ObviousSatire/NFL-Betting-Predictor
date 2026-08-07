@@ -3,159 +3,51 @@ package com.bestg.betting
 import retrofit2.Call
 import retrofit2.http.GET
 import retrofit2.http.Query
-import com.google.gson.annotations.SerializedName
 
 interface ApiService {
     @GET("test")
     fun testConnection(): Call<TestResponse>
-    
+
     @GET("team_stats")
     fun getTeamStats(@Query("team") team: String): Call<TeamStatsResponse>
-    
-    @GET("player_stats")
-    fun getPlayerStats(@Query("name") name: String, @Query("team") team: String): Call<PlayerStatsResponse>
-    
-    @GET("weather")
-    fun getWeather(@Query("team") team: String): Call<WeatherResponse>
-    
-    @GET("injuries")
-    fun getInjuries(@Query("team") team: String): Call<InjuriesResponse>
-    
-    @GET("news")
-    fun getNews(@Query("entity") entity: String): Call<NewsResponse>
-    
+
     @GET("win_loss")
     fun getWinLoss(@Query("team") team: String): Call<WinLossResponse>
-    
+
+    @GET("weather")
+    fun getWeather(@Query("team") team: String): Call<WeatherResponse>
+
+    @GET("injuries")
+    fun getInjuries(@Query("team") team: String): Call<InjuriesResponse>
+
+    @GET("news")
+    fun getNews(@Query("entity") entity: String): Call<NewsResponse>
+
     @GET("roster")
     fun getRoster(@Query("team") team: String): Call<RosterResponse>
-    
+
+    @GET("player_stats")
+    fun getPlayerStats(@Query("name") name: String, @Query("team") team: String): Call<PlayerStatsResponse>
+
     @GET("predict")
     fun getPrediction(@Query("team1") team1: String, @Query("team2") team2: String): Call<PredictionResponse>
+
+    @GET("live_scores")
+    fun getLiveScores(): Call<LiveScoresResponse>
 }
 
-// ============= BASIC RESPONSES =============
-data class TestResponse(
-    @SerializedName("status") val status: String?, 
-    @SerializedName("message") val message: String?
-)
-
-data class TeamStatsResponse(
-    @SerializedName("team") val team: String?, 
-    @SerializedName("record") val record: String?, 
-    @SerializedName("points_for") val points_for: Int?, 
-    @SerializedName("points_against") val points_against: Int?, 
-    @SerializedName("streak") val streak: String?
-)
-
-// ============= EXPANDED PLAYER STATS =============
-data class PlayerStatsResponse(
-    @SerializedName("id") val id: String?,
-    @SerializedName("name") val name: String?, 
-    @SerializedName("position") val position: String?, 
-    @SerializedName("jersey") val jersey: String?, 
-    @SerializedName("team") val team: String?, 
-    @SerializedName("injured") val injured: Boolean?,
-    @SerializedName("stats") val stats: PlayerSeasonStats?
-)
-
-data class PlayerSeasonStats(
-    @SerializedName("passing_yards") val passing_yards: Int?,
-    @SerializedName("passing_tds") val passing_tds: Int?,
-    @SerializedName("completions") val completions: Int?,
-    @SerializedName("passing_attempts") val passing_attempts: Int?,
-    @SerializedName("interceptions") val interceptions: Int?,
-    @SerializedName("qb_rating") val qb_rating: Double?,
-    
-    @SerializedName("rushing_yards") val rushing_yards: Int?,
-    @SerializedName("rushing_tds") val rushing_tds: Int?,
-    @SerializedName("rushing_attempts") val rushing_attempts: Int?,
-    
-    @SerializedName("receiving_yards") val receiving_yards: Int?,
-    @SerializedName("receiving_tds") val receiving_tds: Int?,
-    @SerializedName("receptions") val receptions: Int?,
-    @SerializedName("targets") val targets: Int?,
-    
-    @SerializedName("tackles") val tackles: Int?,
-    @SerializedName("sacks") val sacks: Double?,
-    @SerializedName("def_interceptions") val def_interceptions: Int?
-)
-
-// ============= WEATHER - FIXED WITH SERIALIZED NAMES =============
-data class WeatherResponse(
-    @SerializedName("city") val city: String?,
-    @SerializedName("stadium") val stadium: String?,
-    @SerializedName("temperature") val temperature: Int?,
-    @SerializedName("conditions") val conditions: String?,
-    @SerializedName("wind_speed") val wind_speed: Int?,
-    @SerializedName("precipitation") val precipitation: Int?,
-    @SerializedName("humidity") val humidity: Int?,
-    @SerializedName("impact") val impact: String?
-)
-
-// ============= INJURIES =============
-data class InjuriesResponse(
-    @SerializedName("team") val team: String?, 
-    @SerializedName("injuries") val injuries: List<Injury>?
-)
-
-data class Injury(
-    @SerializedName("player") val player: String?, 
-    @SerializedName("position") val position: String?, 
-    @SerializedName("injury") val injury: String?, 
-    @SerializedName("status") val status: String?, 
-    @SerializedName("status_emoji") val status_emoji: String?, 
-    @SerializedName("date") val date: String?
-)
-
-// ============= NEWS =============
-data class NewsResponse(
-    @SerializedName("team") val team: String?, 
-    @SerializedName("news") val news: List<NewsItem>?
-)
-
-data class NewsItem(
-    @SerializedName("headline") val headline: String?, 
-    @SerializedName("date") val date: String?, 
-    @SerializedName("description") val description: String?, 
-    @SerializedName("source") val source: String?
-)
-
-// ============= WIN/LOSS =============
-data class WinLossResponse(
-    @SerializedName("season_record") val season_record: String?,
-    @SerializedName("regular_season_record") val regular_season_record: String?,
-    @SerializedName("playoff_record") val playoff_record: String?,
-    @SerializedName("win_percentage") val win_percentage: Double?,
-    @SerializedName("current_streak") val current_streak: String?,
-    @SerializedName("last_5_games") val last_5_games: List<String>?,
-    @SerializedName("home_record") val home_record: String?,
-    @SerializedName("away_record") val away_record: String?,
-    @SerializedName("division_record") val division_record: String?,
-    @SerializedName("has_playoffs") val has_playoffs: Boolean?
-)
-
-// ============= ROSTER =============
-data class RosterResponse(
-    @SerializedName("team") val team: String?, 
-    @SerializedName("players") val players: List<PlayerInfo>?
-)
-
-data class PlayerInfo(
-    @SerializedName("id") val id: String?,
-    @SerializedName("name") val name: String?, 
-    @SerializedName("position") val position: String?,
-    @SerializedName("jersey") val jersey: String?,
-    @SerializedName("injured") val injured: Boolean?
-)
-
-// ============= PREDICTION =============
-data class PredictionResponse(
-    @SerializedName("team1") val team1: String?,
-    @SerializedName("team2") val team2: String?,
-    @SerializedName("team1_win_probability") val team1_win_probability: Double?,
-    @SerializedName("team2_win_probability") val team2_win_probability: Double?,
-    @SerializedName("predicted_winner") val predicted_winner: String?,
-    @SerializedName("confidence") val confidence: Double?,
-    @SerializedName("key_factors") val key_factors: List<String>?
-)
+data class TestResponse(val status: String)
+data class TeamStatsResponse(val team: String, val record: String?, val points_for: Int?, val points_against: Int?, val streak: String?)
+data class WinLossResponse(val regular_season_record: String?, val win_percentage: Double?, val current_streak: String?, val last_5_games: List<String>?, val home_record: String?, val away_record: String?, val has_playoffs: Boolean?, val playoff_record: String?)
+data class WeatherResponse(val temperature: Int?, val conditions: String?, val wind_speed: Int?, val precipitation: Int?, val city: String?, val stadium: String?, val impact: String?)
+data class Injury(val player: String?, val position: String?, val injury: String?, val status: String?, val date: String?)
+data class InjuriesResponse(val team: String?, val injuries: List<Injury>?)
+data class NewsItem(val headline: String?, val date: String?, val description: String?, val source: String?)
+data class NewsResponse(val team: String?, val news: List<NewsItem>?)
+data class PlayerInfo(val id: String?, val name: String?, val position: String?, val jersey: String?, val team: String?, val injured: Boolean?)
+data class PlayerSeasonStats(val passing_yards: Int?, val passing_tds: Int?, val completions: Int?, val passing_attempts: Int?, val interceptions: Int?, val qb_rating: Double?, val rushing_yards: Int?, val rushing_tds: Int?, val rushing_attempts: Int?, val receiving_yards: Int?, val receiving_tds: Int?, val receptions: Int?, val targets: Int?, val tackles: Int?, val sacks: Int?, val def_interceptions: Int?)
+data class PlayerStatsResponse(val id: String?, val name: String?, val position: String?, val jersey: String?, val team: String?, val injured: Boolean?, val stats: PlayerSeasonStats?)
+data class PredictionResponse(val team1: String?, val team2: String?, val team1_win_probability: Double?, val team2_win_probability: Double?, val predicted_winner: String?, val confidence: Double?, val key_factors: List<String>?)
+data class RosterResponse(val team: String?, val players: List<PlayerInfo>?)
+data class LiveScore(val away: String, val home: String, val away_score: Int, val home_score: Int, val status: String, val detail: String)
+data class LiveScoresResponse(val scores: List<LiveScore>)

@@ -3,48 +3,64 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:padding="12dp"
-    android:background="#121212">
+    android:padding="8dp"
+    android:background="#1a1a2e">
 
-    <!-- Title -->
     <TextView
+        android:id="@+id/scoreBanner"
+        android:layout_width="match_parent"
+        android:layout_height="32dp"
+        android:background="#16213e"
+        android:textColor="#FFD700"
+        android:textSize="13sp"
+        android:gravity="center_vertical"
+        android:singleLine="true"
+        android:ellipsize="marquee"
+        android:marqueeRepeatLimit="marquee_forever"
+        android:focusable="true"
+        android:focusableInTouchMode="true"
+        android:paddingStart="8dp"
+        android:paddingEnd="8dp"
+        android:text="Loading scores..." />
+
+    <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="🏈 NFL BETTING"
-        android:textSize="18sp"
-        android:textStyle="bold"
-        android:textColor="#FFFFFF"
-        android:gravity="center"
-        android:padding="4dp"
-        android:layout_marginBottom="4dp" />
+        android:orientation="horizontal"
+        android:layout_marginTop="6dp">
 
-    <!-- Team Dropdown -->
-    <Spinner
-        android:id="@+id/teamSpinner"
-        android:layout_width="match_parent"
-        android:layout_height="40dp"
-        android:layout_marginBottom="4dp"
-        android:background="@android:drawable/btn_dropdown"
-        android:padding="8dp"
-        android:visibility="visible" />
+        <Spinner
+            android:id="@+id/teamSpinner"
+            android:layout_width="0dp"
+            android:layout_height="48dp"
+            android:layout_weight="1"
+            android:background="@drawable/spinner_background"
+            android:padding="8dp" />
 
-    <!-- Player Dropdown -->
-    <Spinner
-        android:id="@+id/playerSpinner"
-        android:layout_width="match_parent"
-        android:layout_height="40dp"
-        android:layout_marginBottom="4dp"
-        android:background="@android:drawable/btn_dropdown"
-        android:padding="8dp"
+        <Spinner
+            android:id="@+id/playerSpinner"
+            android:layout_width="0dp"
+            android:layout_height="48dp"
+            android:layout_weight="1"
+            android:background="@drawable/spinner_background"
+            android:padding="8dp"
+            android:layout_marginStart="8dp" />
+    </LinearLayout>
+
+    <ProgressBar
+        android:id="@+id/loadingIndicator"
+        android:layout_width="30dp"
+        android:layout_height="30dp"
+        android:layout_gravity="center"
+        android:layout_marginTop="4dp"
         android:visibility="gone" />
 
-    <!-- Main Content Area -->
     <ScrollView
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1"
-        android:layout_marginBottom="4dp"
-        android:background="#1E1E1E"
+        android:layout_marginTop="4dp"
+        android:background="#16213e"
         android:padding="8dp">
 
         <TextView
@@ -52,47 +68,98 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:text="Select a team to begin..."
-            android:textSize="13sp"
             android:textColor="#E0E0E0"
+            android:textSize="13sp"
             android:fontFamily="monospace"
             android:lineSpacingExtra="2dp" />
     </ScrollView>
 
-    <!-- Buttons Row 1 -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="horizontal"
-        android:gravity="center">
+        android:layout_marginTop="6dp">
 
-        <Button android:id="@+id/testButton" android:layout_width="80dp" android:layout_height="40dp" android:text="TEST" android:textSize="12sp" android:layout_marginEnd="2dp" android:backgroundTint="#607D8B" android:padding="0dp" />
-        <Button android:id="@+id/loadStatsButton" android:layout_width="80dp" android:layout_height="40dp" android:text="STATS" android:textSize="12sp" android:layout_marginEnd="2dp" android:backgroundTint="#4CAF50" android:padding="0dp" />
-        <Button android:id="@+id/loadPlayerButton" android:layout_width="85dp" android:layout_height="40dp" android:text="PLAYER" android:textSize="12sp" android:layout_marginEnd="2dp" android:backgroundTint="#FF9800" android:padding="0dp" />
-        <Button android:id="@+id/predictButton" android:layout_width="85dp" android:layout_height="40dp" android:text="PREDICT" android:textSize="12sp" android:backgroundTint="#9C27B0" android:padding="0dp" />
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/testButton"
+            android:layout_width="0dp"
+            android:layout_height="40dp"
+            android:layout_weight="1"
+            android:text="TEST"
+            android:textSize="11sp"
+            android:backgroundTint="#0f3460" />
 
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/loadStatsButton"
+            android:layout_width="0dp"
+            android:layout_height="40dp"
+            android:layout_weight="1"
+            android:text="STATS"
+            android:textSize="11sp"
+            android:layout_marginStart="4dp"
+            android:backgroundTint="#0f3460" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/loadPlayerButton"
+            android:layout_width="0dp"
+            android:layout_height="40dp"
+            android:layout_weight="1"
+            android:text="PLAYER"
+            android:textSize="11sp"
+            android:layout_marginStart="4dp"
+            android:backgroundTint="#0f3460" />
     </LinearLayout>
 
-    <!-- Buttons Row 2 -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="horizontal"
-        android:layout_marginTop="2dp"
-        android:gravity="center">
+        android:layout_marginTop="4dp">
 
-        <Button android:id="@+id/refreshAllButton" android:layout_width="90dp" android:layout_height="40dp" android:text="REFRESH" android:textSize="12sp" android:layout_marginEnd="2dp" android:backgroundTint="#2196F3" android:padding="0dp" />
-        <Button android:id="@+id/clearButton" android:layout_width="80dp" android:layout_height="40dp" android:text="CLEAR" android:textSize="12sp" android:layout_marginEnd="2dp" android:backgroundTint="#9E9E9E" android:padding="0dp" />
-        <Button android:id="@+id/helpButton" android:layout_width="80dp" android:layout_height="40dp" android:text="HELP" android:textSize="12sp" android:backgroundTint="#FF5722" android:padding="0dp" />
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/predictButton"
+            android:layout_width="0dp"
+            android:layout_height="40dp"
+            android:layout_weight="1"
+            android:text="PREDICT"
+            android:textSize="11sp"
+            android:backgroundTint="#0f3460" />
 
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/refreshAllButton"
+            android:layout_width="0dp"
+            android:layout_height="40dp"
+            android:layout_weight="1"
+            android:text="REFRESH"
+            android:textSize="11sp"
+            android:layout_marginStart="4dp"
+            android:backgroundTint="#0f3460" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/clearButton"
+            android:layout_width="0dp"
+            android:layout_height="40dp"
+            android:layout_weight="1"
+            android:text="CLEAR"
+            android:textSize="11sp"
+            android:layout_marginStart="4dp"
+            android:backgroundTint="#0f3460" />
     </LinearLayout>
 
-    <!-- Loading Indicator -->
-    <ProgressBar
-        android:id="@+id/loadingIndicator"
-        android:layout_width="wrap_content"
+    <LinearLayout
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_gravity="center"
+        android:orientation="horizontal"
         android:layout_marginTop="4dp"
-        android:visibility="gone" />
+        android:layout_marginBottom="4dp">
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/helpButton"
+            android:layout_width="match_parent"
+            android:layout_height="40dp"
+            android:text="HELP (Long Press for Settings)"
+            android:textSize="11sp"
+            android:backgroundTint="#e94560" />
+    </LinearLayout>
 
 </LinearLayout>

@@ -23,6 +23,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var teamSpinner: Spinner
     private lateinit var playerSpinner: Spinner
     private lateinit var resultText: TextView
+    private lateinit var scoreBanner: TextView
     private lateinit var loadingIndicator: ProgressBar
     private lateinit var apiService: ApiService
     private lateinit var sharedPrefs: SharedPreferences
@@ -45,6 +46,7 @@ class MainActivity : AppCompatActivity() {
     )
     
     private val manualStats = mutableMapOf<String, MutableMap<String, String>>()
+    private val scoreHandler = Handler(Looper.getMainLooper())
     
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -52,16 +54,16 @@ class MainActivity : AppCompatActivity() {
         
         sharedPrefs = getSharedPreferences("NFL_Betting_Prefs", Context.MODE_PRIVATE)
         loadManualOverrides()
-        
-        // Load saved IP, default to 10.0.0.60
         serverIp = sharedPrefs.getString("server_ip", "10.0.0.60") ?: "10.0.0.60"
         
         teamSpinner = findViewById(R.id.teamSpinner)
         playerSpinner = findViewById(R.id.playerSpinner)
         resultText = findViewById(R.id.resultText)
+        scoreBanner = findViewById(R.id.scoreBanner)
         loadingIndicator = findViewById(R.id.loadingIndicator)
         
         resultText.movementMethod = ScrollingMovementMethod()
+        scoreBanner.isSelected = true
         
         setupRetrofit()
         
@@ -78,6 +80,7 @@ class MainActivity : AppCompatActivity() {
                 "PLAYER" -> getPlayerStats()
                 "PREDICT" -> fetchPrediction(currentTeam, opponentTeam)
             }
+            fetchLiveScores()
         }
         
         findViewById<MaterialButton>(R.id.clearButton).setOnClickListener { resultText.text = "" }
@@ -90,6 +93,8 @@ class MainActivity : AppCompatActivity() {
         
         setStatsMode()
         Handler(Looper.getMainLooper()).postDelayed({ getTeamStats() }, 500)
+        fetchLiveScores()
+        startScoreUpdates()
     }
     
     private fun setupRetrofit() {
@@ -100,33 +105,51 @@ class MainActivity : AppCompatActivity() {
         apiService = retrofit.create(ApiService::class.java)
     }
     
+    private fun startScoreUpdates() {
+        scoreHandler.postDelayed(object : Runnable {
+            override fun run() {
+                fetchLiveScores()
+                scoreHandler.postDelayed(this, 30000)
+            }
+        }, 30000)
+    }
+    
+    private fun fetchLiveScores() {
+        apiService.getLiveScores().enqueue(object : Callback<LiveScoresResponse> {
+            override fun onResponse(call: Call<LiveScoresResponse>, response: Response<LiveScoresResponse>) {
+                if (response.isSuccessful) {
+                    val scores = response.body()?.scores ?: emptyList()
+                    if (scores.isNotEmpty()) {
+                        scoreBanner.text = scores.joinToString(" | ") { 
+                            "${it.away} ${it.away_score}-${it.home_score} ${it.home} (${it.detail.ifEmpty { it.status }})" 
+                        }
+                    }
+                }
+            }
+            override fun onFailure(call: Call<LiveScoresResponse>, t: Throwable) {}
+        })
+    }
+    
     private fun showOptionsDialog() {
         val options = if (currentMode == "STATS") {
             arrayOf("Change Server IP", "Manual Override Stats")
         } else {
             arrayOf("Change Server IP")
         }
-        
         AlertDialog.Builder(this)
             .setTitle("Options")
             .setItems(options) { _, which ->
-                if (options[which] == "Change Server IP") {
-                    showServerIpDialog()
-                } else {
-                    showManualOverrideDialog()
-                }
-            }
-            .show()
+                if (options[which] == "Change Server IP") showServerIpDialog()
+                else showManualOverrideDialog()
+            }.show()
     }
     
     private fun showServerIpDialog() {
         val input = EditText(this)
         input.setText(serverIp)
-        input.hint = "Enter server IP"
-        
         AlertDialog.Builder(this)
             .setTitle("Set Server IP")
-            .setMessage("Current: $serverIp:5000\nEnter new IP address:")
+            .setMessage("Current: $serverIp:5000")
             .setView(input)
             .setPositiveButton("Save & Test") { _, _ ->
                 val newIp = input.text.toString().trim()
@@ -136,33 +159,22 @@ class MainActivity : AppCompatActivity() {
                     setupRetrofit()
                     testConnection()
                 }
-            }
-            .setNegativeButton("Cancel", null)
-            .show()
+            }.setNegativeButton("Cancel", null).show()
     }
     
     private fun setStatsMode() {
         currentMode = "STATS"
         teamSpinner.visibility = View.VISIBLE
         playerSpinner.visibility = View.GONE
-        resultText.text = "STATS MODE\nSelect a team"
-        
         val numberedTeams = allNFLTeams.mapIndexed { index, team -> "${index + 1}. $team" }
         val teamAdapter = ArrayAdapter(this, android.R.layout.simple_spinner_item, numberedTeams)
         teamAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
         teamSpinner.adapter = teamAdapter
-        
         teamSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
-                currentTeam = allNFLTeams[position]
-                getTeamStats()
+                currentTeam = allNFLTeams[position]; getTeamStats()
             }
             override fun onNothingSelected(parent: AdapterView<*>?) {}
-        }
-        
-        if (currentTeam.isNotEmpty()) {
-            val index = allNFLTeams.indexOf(currentTeam)
-            if (index >= 0) teamSpinner.setSelection(index)
         }
     }
     
@@ -170,27 +182,15 @@ class MainActivity : AppCompatActivity() {
         currentMode = "PLAYER"
         teamSpinner.visibility = View.VISIBLE
         playerSpinner.visibility = View.VISIBLE
-        resultText.text = "PLAYER MODE\nSelect a team, then pick a player"
-        
         val numberedTeams = allNFLTeams.mapIndexed { index, team -> "${index + 1}. $team" }
         val teamAdapter = ArrayAdapter(this, android.R.layout.simple_spinner_item, numberedTeams)
         teamAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
         teamSpinner.adapter = teamAdapter
-        
         teamSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
-                currentTeam = allNFLTeams[position]
-                loadRosterForTeam(currentTeam)
+                currentTeam = allNFLTeams[position]; loadRosterForTeam(currentTeam)
             }
             override fun onNothingSelected(parent: AdapterView<*>?) {}
-        }
-        
-        if (currentTeam.isNotEmpty()) {
-            val index = allNFLTeams.indexOf(currentTeam)
-            if (index >= 0) {
-                teamSpinner.setSelection(index)
-                loadRosterForTeam(currentTeam)
-            }
         }
     }
     
@@ -198,107 +198,69 @@ class MainActivity : AppCompatActivity() {
         currentMode = "PREDICT"
         teamSpinner.visibility = View.VISIBLE
         playerSpinner.visibility = View.VISIBLE
-        resultText.text = "PREDICT MODE\nSelect your team, then pick opponent"
-        
         val numberedTeams = allNFLTeams.mapIndexed { index, team -> "${index + 1}. $team" }
         val teamAdapter = ArrayAdapter(this, android.R.layout.simple_spinner_item, numberedTeams)
         teamAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
         teamSpinner.adapter = teamAdapter
-        
         teamSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
-                currentTeam = allNFLTeams[position]
-                updateOpponentSpinner()
+                currentTeam = allNFLTeams[position]; updateOpponentSpinner()
             }
             override fun onNothingSelected(parent: AdapterView<*>?) {}
         }
-        
         if (currentTeam.isEmpty()) currentTeam = allNFLTeams[0]
-        val index = allNFLTeams.indexOf(currentTeam)
-        if (index >= 0) teamSpinner.setSelection(index)
-        
         updateOpponentSpinner()
     }
     
     private fun updateOpponentSpinner() {
         val opponents = allNFLTeams.filter { it != currentTeam }
-        val numberedOpponents = opponents.mapIndexed { index, team -> "${index + 1}. $team" }
-        val adapter = ArrayAdapter(this, android.R.layout.simple_spinner_item, numberedOpponents)
+        val adapter = ArrayAdapter(this, android.R.layout.simple_spinner_item, opponents.mapIndexed { i, t -> "${i+1}. $t" })
         adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
         playerSpinner.adapter = adapter
-        
         playerSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
                 if (position >= 0 && position < opponents.size) {
-                    opponentTeam = opponents[position]
-                    fetchPrediction(currentTeam, opponentTeam)
+                    opponentTeam = opponents[position]; fetchPrediction(currentTeam, opponentTeam)
                 }
             }
             override fun onNothingSelected(parent: AdapterView<*>?) {}
         }
-        
-        if (opponents.isNotEmpty()) opponentTeam = opponents[0]
     }
     
     private fun loadRosterForTeam(teamName: String) {
         showLoading(true)
-        resultText.text = "Loading roster for $teamName..."
-        
         apiService.getRoster(teamName).enqueue(object : Callback<RosterResponse> {
             override fun onResponse(call: Call<RosterResponse>, response: Response<RosterResponse>) {
                 showLoading(false)
                 if (response.isSuccessful) {
                     val players = response.body()?.players ?: emptyList()
-                    if (players.isEmpty()) {
-                        resultText.text = "No players found for $teamName"
-                        return
-                    }
-                    
+                    if (players.isEmpty()) { resultText.text = "No players found"; return }
                     val playerNames = players.mapIndexed { index, player -> 
-                        val inj = if (player.injured == true) " [INJ]" else ""
-                        "${index + 1}. ${player.name} (${player.position})$inj"
+                        "${index + 1}. ${player.name} (${player.position})${if (player.injured == true) " [INJ]" else ""}"
                     }
-                    
                     val adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_item, playerNames)
                     adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
                     playerSpinner.adapter = adapter
-                    
                     playerSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
                         override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
                             if (position >= 0 && position < players.size) {
-                                currentPlayer = players[position].name ?: ""
-                                getPlayerStats()
+                                currentPlayer = players[position].name ?: ""; getPlayerStats()
                             }
                         }
                         override fun onNothingSelected(parent: AdapterView<*>?) {}
                     }
-                    
                     resultText.text = "${players.size} players loaded\nSelect a player"
-                } else {
-                    resultText.text = "Failed to load roster"
                 }
             }
-            override fun onFailure(call: Call<RosterResponse>, t: Throwable) {
-                showLoading(false)
-                resultText.text = "Error: ${t.message}"
-            }
+            override fun onFailure(call: Call<RosterResponse>, t: Throwable) { showLoading(false) }
         })
     }
     
     private fun getTeamStats() {
-        val team = currentTeam
-        if (team.isEmpty()) return
-        
+        val team = currentTeam; if (team.isEmpty()) return
         showLoading(true)
-        resultText.text = "Loading $team data..."
-        
         val manual = manualStats[team]
-        if (manual != null && manual.isNotEmpty()) {
-            showLoading(false)
-            displayManualStats(team, manual)
-            return
-        }
-        
+        if (manual != null && manual.isNotEmpty()) { showLoading(false); displayManualStats(team, manual); return }
         apiService.getTeamStats(team).enqueue(object : Callback<TeamStatsResponse> {
             override fun onResponse(call: Call<TeamStatsResponse>, response: Response<TeamStatsResponse>) {
                 val stats = response.body()
@@ -314,386 +276,126 @@ class MainActivity : AppCompatActivity() {
                                         apiService.getNews(team).enqueue(object : Callback<NewsResponse> {
                                             override fun onResponse(call: Call<NewsResponse>, newsResponse: Response<NewsResponse>) {
                                                 showLoading(false)
-                                                val news = newsResponse.body()
-                                                displayFullStats(team, stats, wl, weather, injuries, news)
+                                                displayFullStats(team, stats, wl, weather, injuries, newsResponse.body())
                                             }
-                                            override fun onFailure(call: Call<NewsResponse>, t: Throwable) {
-                                                showLoading(false)
-                                                displayFullStats(team, stats, wl, weather, injuries, null)
-                                            }
+                                            override fun onFailure(call: Call<NewsResponse>, t: Throwable) { showLoading(false) }
                                         })
                                     }
-                                    override fun onFailure(call: Call<InjuriesResponse>, t: Throwable) {
-                                        showLoading(false)
-                                        displayFullStats(team, stats, wl, weather, null, null)
-                                    }
+                                    override fun onFailure(call: Call<InjuriesResponse>, t: Throwable) { showLoading(false) }
                                 })
                             }
-                            override fun onFailure(call: Call<WeatherResponse>, t: Throwable) {
-                                showLoading(false)
-                                displayFullStats(team, stats, wl, null, null, null)
-                            }
+                            override fun onFailure(call: Call<WeatherResponse>, t: Throwable) { showLoading(false) }
                         })
                     }
-                    override fun onFailure(call: Call<WinLossResponse>, t: Throwable) {
-                        showLoading(false)
-                        resultText.text = "Error loading win/loss data"
-                    }
+                    override fun onFailure(call: Call<WinLossResponse>, t: Throwable) { showLoading(false) }
                 })
             }
-            override fun onFailure(call: Call<TeamStatsResponse>, t: Throwable) {
-                showLoading(false)
-                resultText.text = "Error loading team stats"
-            }
+            override fun onFailure(call: Call<TeamStatsResponse>, t: Throwable) { showLoading(false) }
         })
     }
     
     private fun displayFullStats(team: String, stats: TeamStatsResponse?, wl: WinLossResponse?, 
                                   weather: WeatherResponse?, injuries: InjuriesResponse?, news: NewsResponse?) {
         val sb = StringBuilder()
-        
-        sb.append("$team\n")
-        sb.append("==============================\n\n")
-        
-        sb.append("[ TEAM STATS ]\n")
+        sb.append("$team\n==============================\n\n[ TEAM STATS ]\n")
         if (stats != null && wl != null) {
-            val winPercent = (wl.win_percentage ?: 0.0) * 100
-            val pointDiff = (stats.points_for ?: 0) - (stats.points_against ?: 0)
-            val last5 = wl.last_5_games?.joinToString(" ") ?: "N/A"
-            
             sb.append("Record: ${wl.regular_season_record ?: "N/A"}\n")
-            sb.append("Win: ${String.format("%.1f", winPercent)}%\n")
+            sb.append("Win: ${String.format("%.1f", (wl.win_percentage ?: 0.0) * 100)}%\n")
             sb.append("PF: ${stats.points_for ?: 0}  PA: ${stats.points_against ?: 0}\n")
-            sb.append("Diff: ${if(pointDiff >= 0) "+" else ""}$pointDiff\n")
             sb.append("Streak: ${stats.streak ?: "N/A"}\n")
-            sb.append("Last 5: $last5\n")
-            sb.append("Home: ${wl.home_record ?: "N/A"}\n")
-            sb.append("Away: ${wl.away_record ?: "N/A"}\n")
-            if (wl.has_playoffs == true && wl.playoff_record != "0-0") {
-                sb.append("Playoffs: ${wl.playoff_record}\n")
+        }
+        sb.append("\n[ WEATHER ]\n")
+        if (weather != null) sb.append("${weather.temperature ?: "--"}F, ${weather.conditions ?: "N/A"}\n${weather.impact ?: ""}\n")
+        sb.append("\n[ INJURIES ]\n")
+        if (injuries?.injuries != null && injuries.injuries!!.isNotEmpty()) {
+            for (i in 0 until minOf(injuries.injuries!!.size, 3)) {
+                val item = injuries.injuries!![i]
+                sb.append("- ${item.player}: ${item.status}\n")
             }
-        } else {
-            sb.append("Stats unavailable\n")
-        }
-        sb.append("\n")
-        
-        sb.append("[ WEATHER ]\n")
-        if (weather != null) {
-            sb.append("${weather.stadium ?: team}\n")
-            sb.append("${weather.temperature ?: "--"}F, ${weather.conditions ?: "N/A"}\n")
-            sb.append("Wind: ${weather.wind_speed ?: "--"} mph\n")
-            sb.append("Rain: ${weather.precipitation ?: 0}%\n")
-            sb.append("${weather.impact ?: "Minimal impact"}\n")
-        } else {
-            sb.append("Weather unavailable\n")
-        }
-        sb.append("\n")
-        
-        sb.append("[ INJURIES ]\n")
-        if (injuries != null && injuries.injuries != null && injuries.injuries!!.isNotEmpty()) {
-            val items = injuries.injuries!!
-            for (i in 0 until minOf(items.size, 4)) {
-                val item = items[i]
-                sb.append("- ${item.player ?: "Unknown"} (${item.position ?: "N/A"})\n")
-                sb.append("  ${item.injury ?: "Unknown"} - ${item.status ?: "Unknown"}\n")
+        } else sb.append("None reported\n")
+        sb.append("\n[ NEWS ]\n")
+        if (news?.news != null && news.news!!.isNotEmpty()) {
+            for (i in 0 until minOf(news.news!!.size, 3)) {
+                sb.append("${i+1}. ${news.news!![i].headline}\n")
             }
-        } else {
-            sb.append("No injuries reported\n")
-        }
-        sb.append("\n")
-        
-        sb.append("[ LATEST NEWS ]\n")
-        if (news != null && news.news != null && news.news!!.isNotEmpty()) {
-            val items = news.news!!
-            for (i in 0 until minOf(items.size, 5)) {
-                val item = items[i]
-                sb.append("${i+1}. ${item.headline ?: "No headline"}\n")
-                sb.append("   ${item.date ?: ""}\n\n")
-            }
-        } else {
-            sb.append("No recent news\n")
-        }
-        
+        } else sb.append("No recent news\n")
         resultText.text = sb.toString()
     }
     
     private fun displayManualStats(team: String, manual: MutableMap<String, String>) {
-        val record = manual["record"] ?: "N/A"
-        val winPercent = manual["win_percentage"]?.toDoubleOrNull() ?: 0.0
-        val pf = manual["points_for"]?.toIntOrNull() ?: 0
-        val pa = manual["points_against"]?.toIntOrNull() ?: 0
-        val last5 = manual["last_5"]?.replace(",", " ") ?: "N/A"
-        
-        resultText.text = """
-            $team (MANUAL)
-            ==============================
-            
-            [ MANUAL STATS ]
-            Record: $record
-            Win: ${String.format("%.1f", winPercent)}%
-            PF: $pf  PA: $pa
-            Diff: ${pf - pa}
-            Last 5: $last5
-            
-            Long press HELP to edit
-        """.trimIndent()
+        resultText.text = "$team (MANUAL)\nRecord: ${manual["record"] ?: "N/A"}\nPF: ${manual["points_for"] ?: 0}  PA: ${manual["points_against"] ?: 0}"
     }
     
     private fun getPlayerStats() {
-        if (currentPlayer.isEmpty() || currentTeam.isEmpty()) {
-            resultText.text = "Please select a player first"
-            return
-        }
-        
+        if (currentPlayer.isEmpty()) return
         showLoading(true)
         apiService.getPlayerStats(currentPlayer, currentTeam).enqueue(object : Callback<PlayerStatsResponse> {
             override fun onResponse(call: Call<PlayerStatsResponse>, response: Response<PlayerStatsResponse>) {
                 showLoading(false)
-                if (response.isSuccessful) {
-                    displayPlayerStats(response.body())
-                } else {
-                    resultText.text = "Failed to get player stats"
-                }
+                if (response.isSuccessful) displayPlayerStats(response.body())
             }
-            override fun onFailure(call: Call<PlayerStatsResponse>, t: Throwable) {
-                showLoading(false)
-                resultText.text = "Error: ${t.message}"
-            }
+            override fun onFailure(call: Call<PlayerStatsResponse>, t: Throwable) { showLoading(false) }
         })
     }
     
     private fun displayPlayerStats(p: PlayerStatsResponse?) {
-        if (p == null) {
-            resultText.text = "No player data"
-            return
-        }
-        
-        val stats = p.stats
+        if (p == null) return
         val sb = StringBuilder()
-        
-        sb.append("${p.name}\n")
-        sb.append("==============================\n\n")
-        
-        sb.append("[ INFO ]\n")
-        sb.append("Position: ${p.position ?: "N/A"}\n")
-        sb.append("Jersey: #${p.jersey ?: "N/A"}\n")
-        sb.append("Team: ${p.team ?: currentTeam}\n")
-        sb.append("Status: ${if (p.injured == true) "INJURED" else "Active"}\n")
-        
-        if (stats == null) {
-            sb.append("\nNo season stats available")
-            resultText.text = sb.toString()
-            return
-        }
-        
-        if (stats.passing_yards != null || stats.passing_tds != null) {
-            sb.append("\n[ PASSING ]\n")
-            stats.passing_yards?.let { sb.append("Yards: $it\n") }
-            stats.passing_tds?.let { sb.append("TDs: $it\n") }
-            val comp = stats.completions ?: 0
-            val att = stats.passing_attempts ?: 0
-            if (comp > 0 || att > 0) {
-                val pct = if (att > 0) (comp * 100.0 / att) else 0.0
-                sb.append("Comp: $comp/$att (${String.format("%.1f", pct)}%)\n")
-            }
-            stats.interceptions?.let { sb.append("INTs: $it\n") }
-            stats.qb_rating?.let { sb.append("Rating: ${String.format("%.1f", it)}\n") }
-        }
-        
-        if (stats.rushing_yards != null || stats.rushing_tds != null) {
-            sb.append("\n[ RUSHING ]\n")
-            stats.rushing_yards?.let { sb.append("Yards: $it\n") }
-            stats.rushing_tds?.let { sb.append("TDs: $it\n") }
-            stats.rushing_attempts?.let { sb.append("Att: $it\n") }
-            val yards = stats.rushing_yards ?: 0
-            val attempts = stats.rushing_attempts ?: 0
-            if (yards > 0 && attempts > 0) {
-                sb.append("Avg: ${String.format("%.1f", yards.toDouble() / attempts)}\n")
-            }
-        }
-        
-        if (stats.receiving_yards != null || stats.receiving_tds != null) {
-            sb.append("\n[ RECEIVING ]\n")
-            stats.receiving_yards?.let { sb.append("Yards: $it\n") }
-            stats.receiving_tds?.let { sb.append("TDs: $it\n") }
-            stats.receptions?.let { sb.append("Rec: $it\n") }
-            stats.targets?.let { sb.append("Tgts: $it\n") }
-            val rec = stats.receptions ?: 0
-            val yards = stats.receiving_yards ?: 0
-            if (rec > 0 && yards > 0) {
-                sb.append("Avg: ${String.format("%.1f", yards.toDouble() / rec)}\n")
-            }
-        }
-        
-        if (stats.tackles != null || stats.sacks != null) {
-            sb.append("\n[ DEFENSE ]\n")
-            stats.tackles?.let { sb.append("Tackles: $it\n") }
-            stats.sacks?.let { sb.append("Sacks: $it\n") }
-            stats.def_interceptions?.let { sb.append("INTs: $it\n") }
-        }
-        
+        sb.append("${p.name}\nPosition: ${p.position} | #${p.jersey}\nTeam: ${p.team}\n")
+        if (p.stats == null) { sb.append("\nNo season stats available"); resultText.text = sb.toString(); return }
+        val s = p.stats
+        if (s!!.passing_yards != null) sb.append("\n[PASSING] Yards: ${s.passing_yards} TDs: ${s.passing_tds} INTs: ${s.interceptions}")
+        if (s.rushing_yards != null) sb.append("\n[RUSHING] Yards: ${s.rushing_yards} TDs: ${s.rushing_tds}")
+        if (s.receiving_yards != null) sb.append("\n[RECEIVING] Yards: ${s.receiving_yards} TDs: ${s.receiving_tds} Rec: ${s.receptions}")
         resultText.text = sb.toString()
     }
     
     private fun fetchPrediction(team1: String, team2: String) {
         if (team1.isEmpty() || team2.isEmpty()) return
-        
         showLoading(true)
-        resultText.text = "Analyzing $team1 vs $team2..."
-        
-        apiService.getWinLoss(team1).enqueue(object : Callback<WinLossResponse> {
-            override fun onResponse(call: Call<WinLossResponse>, wl1Response: Response<WinLossResponse>) {
-                val wl1 = wl1Response.body()
-                apiService.getWinLoss(team2).enqueue(object : Callback<WinLossResponse> {
-                    override fun onResponse(call: Call<WinLossResponse>, wl2Response: Response<WinLossResponse>) {
-                        val wl2 = wl2Response.body()
-                        apiService.getPrediction(team1, team2).enqueue(object : Callback<PredictionResponse> {
-                            override fun onResponse(call: Call<PredictionResponse>, response: Response<PredictionResponse>) {
-                                showLoading(false)
-                                if (response.isSuccessful) {
-                                    displayPrediction(response.body(), wl1, wl2, team1, team2)
-                                } else {
-                                    resultText.text = "Prediction failed"
-                                }
-                            }
-                            override fun onFailure(call: Call<PredictionResponse>, t: Throwable) {
-                                showLoading(false)
-                                resultText.text = "Error: ${t.message}"
-                            }
-                        })
-                    }
-                    override fun onFailure(call: Call<WinLossResponse>, t: Throwable) {
-                        fetchBasicPrediction(team1, team2)
-                    }
-                })
-            }
-            override fun onFailure(call: Call<WinLossResponse>, t: Throwable) {
-                fetchBasicPrediction(team1, team2)
-            }
-        })
-    }
-    
-    private fun fetchBasicPrediction(team1: String, team2: String) {
         apiService.getPrediction(team1, team2).enqueue(object : Callback<PredictionResponse> {
             override fun onResponse(call: Call<PredictionResponse>, response: Response<PredictionResponse>) {
                 showLoading(false)
                 if (response.isSuccessful) {
-                    displayPrediction(response.body(), null, null, team1, team2)
+                    val p = response.body()
+                    resultText.text = "$team1 vs $team2\nWinner: ${p?.predicted_winner}\n${team1}: ${p?.team1_win_probability}%\n${team2}: ${p?.team2_win_probability}%"
                 }
             }
-            override fun onFailure(call: Call<PredictionResponse>, t: Throwable) {
-                showLoading(false)
-                resultText.text = "Error: ${t.message}"
-            }
+            override fun onFailure(call: Call<PredictionResponse>, t: Throwable) { showLoading(false) }
         })
-    }
-    
-    private fun displayPrediction(pred: PredictionResponse?, wl1: WinLossResponse?, 
-                                   wl2: WinLossResponse?, team1: String, team2: String) {
-        val sb = StringBuilder()
-        
-        sb.append("PREDICTION: $team1 vs $team2\n")
-        sb.append("==============================\n\n")
-        
-        if (wl1 != null && wl2 != null) {
-            sb.append("[ RECORDS ]\n")
-            sb.append("$team1: ${wl1.regular_season_record ?: "N/A"} (${String.format("%.1f", (wl1.win_percentage ?: 0.0) * 100)}%)\n")
-            sb.append("$team2: ${wl2.regular_season_record ?: "N/A"} (${String.format("%.1f", (wl2.win_percentage ?: 0.0) * 100)}%)\n\n")
-        }
-        
-        sb.append("[ WIN PROBABILITY ]\n")
-        val prob1 = pred?.team1_win_probability ?: 50.0
-        val prob2 = pred?.team2_win_probability ?: 50.0
-        sb.append("$team1: ${String.format("%.1f", prob1)}%\n")
-        sb.append("$team2: ${String.format("%.1f", prob2)}%\n\n")
-        
-        sb.append("[ PREDICTION ]\n")
-        sb.append("Winner: ${pred?.predicted_winner ?: "N/A"}\n")
-        sb.append("Confidence: ${String.format("%.1f", pred?.confidence ?: 0.0)}%\n\n")
-        
-        sb.append("[ KEY FACTORS ]\n")
-        pred?.key_factors?.forEach {
-            sb.append("- $it\n")
-        } ?: sb.append("Analysis unavailable\n")
-        
-        resultText.text = sb.toString()
     }
     
     private fun loadManualOverrides() {
         sharedPrefs.getStringSet("manual_overrides", emptySet())?.forEach { entry ->
             val parts = entry.split("|")
-            if (parts.size == 3) {
-                manualStats.getOrPut(parts[0]) { mutableMapOf() }[parts[1]] = parts[2]
-            }
+            if (parts.size == 3) manualStats.getOrPut(parts[0]) { mutableMapOf() }[parts[1]] = parts[2]
         }
     }
     
     private fun saveManualOverride(team: String, statName: String, value: String) {
         manualStats.getOrPut(team) { mutableMapOf() }[statName] = value
-        val savedSet = manualStats.flatMap { (t, stats) -> stats.map { "$t|${it.key}|${it.value}" } }.toSet()
-        sharedPrefs.edit().putStringSet("manual_overrides", savedSet).apply()
+        sharedPrefs.edit().putStringSet("manual_overrides", manualStats.flatMap { (t, s) -> s.map { "$t|${it.key}|${it.value}" } }.toSet()).apply()
     }
     
     private fun showManualOverrideDialog() {
         val team = currentTeam
-        AlertDialog.Builder(this)
-            .setTitle("Manual Override - $team")
-            .setItems(arrayOf("Record", "Win Percentage", "Points For", "Points Against", "Last 5 Games", "Reset Team Data")) { _, which ->
+        AlertDialog.Builder(this).setTitle("Manual Override - $team")
+            .setItems(arrayOf("Record", "Points For", "Points Against", "Reset")) { _, which ->
                 when (which) {
-                    0 -> showStatEditDialog(team, "record", "Enter Record (e.g., 14-3)")
-                    1 -> showStatEditDialog(team, "win_percentage", "Enter Win % (e.g., 82.4)")
-                    2 -> showStatEditDialog(team, "points_for", "Enter Points For")
-                    3 -> showStatEditDialog(team, "points_against", "Enter Points Against")
-                    4 -> showLast5EditDialog(team)
-                    5 -> resetTeamData(team)
+                    0 -> showStatEditDialog(team, "record")
+                    1 -> showStatEditDialog(team, "points_for")
+                    2 -> showStatEditDialog(team, "points_against")
+                    3 -> { manualStats.remove(team); getTeamStats() }
                 }
             }.show()
     }
     
-    private fun showStatEditDialog(team: String, statKey: String, prompt: String) {
+    private fun showStatEditDialog(team: String, statKey: String) {
         val input = EditText(this)
-        input.hint = prompt
         input.setText(manualStats[team]?.get(statKey) ?: "")
-        AlertDialog.Builder(this)
-            .setTitle("Edit $statKey")
-            .setView(input)
-            .setPositiveButton("Save") { _, _ ->
-                val newValue = input.text.toString()
-                if (newValue.isNotBlank()) {
-                    saveManualOverride(team, statKey, newValue)
-                    if (currentMode == "STATS") getTeamStats()
-                }
-            }
-            .setNegativeButton("Cancel", null)
-            .show()
-    }
-    
-    private fun showLast5EditDialog(team: String) {
-        val games = arrayOf("Game 1", "Game 2", "Game 3", "Game 4", "Game 5")
-        val checked = booleanArrayOf(false, false, false, false, false)
-        AlertDialog.Builder(this)
-            .setTitle("Last 5 Games Results")
-            .setMultiChoiceItems(games, checked) { _, _, _ -> }
-            .setPositiveButton("Save") { _, _ ->
-                val results = checked.map { if (it) "W" else "L" }.joinToString(",")
-                saveManualOverride(team, "last_5", results)
-                if (currentMode == "STATS") getTeamStats()
-            }
-            .setNegativeButton("Cancel", null)
-            .show()
-    }
-    
-    private fun resetTeamData(team: String) {
-        AlertDialog.Builder(this)
-            .setTitle("Reset $team Data")
-            .setMessage("Remove all manual overrides for $team?")
-            .setPositiveButton("Reset") { _, _ ->
-                manualStats.remove(team)
-                sharedPrefs.edit().putStringSet("manual_overrides", emptySet()).apply()
-                if (currentMode == "STATS") getTeamStats()
-            }
-            .setNegativeButton("Cancel", null)
-            .show()
+        AlertDialog.Builder(this).setTitle("Edit $statKey").setView(input)
+            .setPositiveButton("Save") { _, _ -> saveManualOverride(team, statKey, input.text.toString()); getTeamStats() }
+            .setNegativeButton("Cancel", null).show()
     }
     
     private fun testConnection() {
@@ -701,32 +403,15 @@ class MainActivity : AppCompatActivity() {
         apiService.testConnection().enqueue(object : Callback<TestResponse> {
             override fun onResponse(call: Call<TestResponse>, response: Response<TestResponse>) {
                 showLoading(false)
-                val ipInfo = "Server: $serverIp:5000\n\n"
-                resultText.text = if (response.isSuccessful) "${ipInfo}API Connected" else "${ipInfo}Server error"
+                resultText.text = if (response.isSuccessful) "Server: $serverIp:5000\nConnected!" else "Server error"
             }
-            override fun onFailure(call: Call<TestResponse>, t: Throwable) {
-                showLoading(false)
-                resultText.text = "Cannot reach server at $serverIp:5000"
-            }
+            override fun onFailure(call: Call<TestResponse>, t: Throwable) { showLoading(false); resultText.text = "Cannot reach $serverIp:5000" }
         })
     }
     
     private fun showHelp() {
-        resultText.text = """
-            HELP - Server: $serverIp:5000
-            ==============================
-            
-            MODES:
-            STATS - Team info, weather, injuries, news
-            PLAYER - Full player stats
-            PREDICT - AI win prediction
-            
-            LONG PRESS HELP:
-            Change server IP or manual override
-        """.trimIndent()
+        resultText.text = "HELP - $serverIp:5000\n\nSTATS: Team info\nPLAYER: Player stats\nPREDICT: Win prediction\nLong press HELP for settings"
     }
     
-    private fun showLoading(show: Boolean) {
-        loadingIndicator.visibility = if (show) View.VISIBLE else View.GONE
-    }
+    private fun showLoading(show: Boolean) { loadingIndicator.visibility = if (show) View.VISIBLE else View.GONE }
 }
