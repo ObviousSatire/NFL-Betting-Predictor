@@ -343,7 +343,8 @@ class MainActivity : AppCompatActivity() {
         val sb = StringBuilder()
         sb.append("${p.name}\nPosition: ${p.position} | #${p.jersey}\nTeam: ${p.team}\n")
         if (p.stats == null) {
-            fetchPreseasonStats(p.name ?: "", p.team ?: currentTeam)
+            // Don't fetch preseason here - let getPlayerStats handle it
+            resultText.text = sb.toString()
             return
         }
         val s = p.stats
