@@ -291,8 +291,29 @@ def get_player_stats():
     stats = get_player_stats_sportsipy(name, team)
     if stats:
         player_info["stats"] = stats
-    else:
-        player_info["stats"] = None
+        return jsonify(player_info)
+    ps_url = f'{ESPN_SITE_V2}/teams/{TEAM_MAP.get(team, "")}/schedule?season=2026&seasontype=1'
+    ps_data = get_cached_or_fetch(ps_url, f'preseason_{team}')
+    if ps_data and 'events' in ps_data:
+        for event in ps_data['events']:
+            for comp in event.get('competitions', []):
+                for competitor in comp.get('competitors', []):
+                    for athlete in competitor.get('roster', []):
+                        if name.lower() in athlete.get('athlete', {}).get('displayName', '').lower():
+                            ps_stats = {}
+                            for stat in athlete.get('stats', []):
+                                sn = stat.get('name', '')
+                                val = stat.get('value', 0)
+                                if 'passingYards' in sn: ps_stats['passing_yards'] = int(val)
+                                elif 'passingTouchdowns' in sn: ps_stats['passing_tds'] = int(val)
+                                elif 'rushingYards' in sn: ps_stats['rushing_yards'] = int(val)
+                                elif 'rushingTouchdowns' in sn: ps_stats['rushing_tds'] = int(val)
+                                elif 'receivingYards' in sn: ps_stats['receiving_yards'] = int(val)
+                                elif 'receivingTouchdowns' in sn: ps_stats['receiving_tds'] = int(val)
+                            if ps_stats:
+                                player_info['stats'] = ps_stats
+                                return jsonify(player_info)
+    player_info["stats"] = None
     return jsonify(player_info)
 
 @app.route('/weather', methods=['GET'])
@@ -497,6 +518,60 @@ def get_live_scores():
         return jsonify({"scores": live if live else games[:5]})
     except:
         return jsonify({"scores": []})
+
+@app.route('/preseason_stats', methods=['GET'])
+def get_preseason_stats():
+    team = request.args.get('team', '')
+    name = request.args.get('name', '')
+    if not team or not name:
+        return jsonify({'error': 'team and name required'}), 400
+    try:
+        for season in [2025, 2026]:
+            for seasontype in [1, 2]:
+                sched_url = f'{ESPN_SITE_V2}/teams/{TEAM_MAP.get(team, "")}/schedule?season={season}&seasontype={seasontype}'
+                try:
+                    sched = requests.get(sched_url, timeout=10).json()
+                except:
+                    continue
+                for event in sched.get('events', []):
+                    event_id = event.get('id', '')
+                    if not event_id:
+                        continue
+                    try:
+                        summary = requests.get(f'{ESPN_SITE_V2}/summary?event={event_id}', timeout=10).json()
+                    except:
+                        continue
+                    if 'boxscore' not in summary:
+                        continue
+                    for team_data in summary['boxscore'].get('players', []):
+                        for stat_group in team_data.get('statistics', []):
+                            for athlete in stat_group.get('athletes', []):
+                                athlete_name = athlete.get('athlete', {}).get('displayName', '')
+                                if name.lower() in athlete_name.lower():
+                                    stats = {}
+                                    raw_stats = athlete.get('stats', [])
+                                    if len(raw_stats) >= 2:
+                                        if stat_group['name'] == 'passing':
+                                            stats['completions'] = raw_stats[0].split('/')[0]
+                                            stats['passing_attempts'] = raw_stats[0].split('/')[1]
+                                            stats['passing_yards'] = int(raw_stats[1])
+                                            if len(raw_stats) >= 5:
+                                                stats['passing_tds'] = int(raw_stats[3])
+                                        elif stat_group['name'] == 'rushing':
+                                            stats['rushing_attempts'] = int(raw_stats[0]) if raw_stats[0].isdigit() else 0
+                                            stats['rushing_yards'] = int(raw_stats[1])
+                                            if len(raw_stats) >= 4:
+                                                stats['rushing_tds'] = int(raw_stats[3])
+                                        elif stat_group['name'] == 'receiving':
+                                            stats['receptions'] = int(raw_stats[0]) if raw_stats[0].isdigit() else 0
+                                            stats['receiving_yards'] = int(raw_stats[1])
+                                            if len(raw_stats) >= 4:
+                                                stats['receiving_tds'] = int(raw_stats[3])
+                                    return jsonify({'stats': stats if stats else None})
+        return jsonify({'stats': None})
+    except Exception as e:
+        return jsonify({'stats': None, 'error': str(e)})
+
 if __name__ == "__main__":
     print("NFL API Running on http://localhost:5000")
     app.run(host='0.0.0.0', port=5000, debug=True)

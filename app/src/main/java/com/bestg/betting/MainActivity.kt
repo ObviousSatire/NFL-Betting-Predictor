@@ -342,7 +342,10 @@ class MainActivity : AppCompatActivity() {
         if (p == null) return
         val sb = StringBuilder()
         sb.append("${p.name}\nPosition: ${p.position} | #${p.jersey}\nTeam: ${p.team}\n")
-        if (p.stats == null) { sb.append("\nNo season stats available"); resultText.text = sb.toString(); return }
+        if (p.stats == null) {
+            fetchPreseasonStats(p.name ?: "", p.team ?: currentTeam)
+            return
+        }
         val s = p.stats
         if (s!!.passing_yards != null) sb.append("\n[PASSING] Yards: ${s.passing_yards} TDs: ${s.passing_tds} INTs: ${s.interceptions}")
         if (s.rushing_yards != null) sb.append("\n[RUSHING] Yards: ${s.rushing_yards} TDs: ${s.rushing_tds}")
@@ -398,6 +401,28 @@ class MainActivity : AppCompatActivity() {
             .setNegativeButton("Cancel", null).show()
     }
     
+    private fun fetchPreseasonStats(name: String, team: String) {
+        apiService.getPreseasonStats(team, name).enqueue(object : Callback<PreseasonStatsResponse> {
+            override fun onResponse(call: Call<PreseasonStatsResponse>, response: Response<PreseasonStatsResponse>) {
+                if (response.isSuccessful && response.body()?.stats != null) {
+                    val s = response.body()!!.stats!!
+                    val sb = StringBuilder()
+                    sb.append("$name\nPosition: N/A\nTeam: $team\n")
+                    sb.append("\n[ PRESEASON STATS ]")
+                    if (s.passing_yards != null) sb.append("\nPassing: ${s.passing_yards} yds, ${s.passing_tds ?: 0} TD")
+                    if (s.rushing_yards != null) sb.append("\nRushing: ${s.rushing_yards} yds, ${s.rushing_tds ?: 0} TD")
+                    if (s.receiving_yards != null) sb.append("\nReceiving: ${s.receiving_yards} yds, ${s.receiving_tds ?: 0} TD")
+                    resultText.text = sb.toString()
+                } else {
+                    resultText.text = "No season stats available"
+                }
+            }
+            override fun onFailure(call: Call<PreseasonStatsResponse>, t: Throwable) {
+                resultText.text = "No season stats available"
+            }
+        })
+    }
+
     private fun testConnection() {
         showLoading(true)
         apiService.testConnection().enqueue(object : Callback<TestResponse> {

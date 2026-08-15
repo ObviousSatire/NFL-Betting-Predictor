@@ -34,6 +34,9 @@ interface ApiService {
 
     @GET("live_scores")
     fun getLiveScores(): Call<LiveScoresResponse>
+
+    @GET("preseason_stats")
+    fun getPreseasonStats(@Query("team") team: String, @Query("name") name: String): Call<PreseasonStatsResponse>
 }
 
 data class TestResponse(val status: String)
@@ -51,3 +54,4 @@ data class PredictionResponse(val team1: String?, val team2: String?, val team1_
 data class RosterResponse(val team: String?, val players: List<PlayerInfo>?)
 data class LiveScore(val away: String, val home: String, val away_score: Int, val home_score: Int, val status: String, val detail: String)
 data class LiveScoresResponse(val scores: List<LiveScore>)
+data class PreseasonStatsResponse(val stats: PlayerSeasonStats?)
