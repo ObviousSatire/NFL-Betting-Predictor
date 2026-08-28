@@ -362,7 +362,17 @@ class MainActivity : AppCompatActivity() {
                 showLoading(false)
                 if (response.isSuccessful) {
                     val p = response.body()
-                    resultText.text = "$team1 vs $team2\nWinner: ${p?.predicted_winner}\n${team1}: ${p?.team1_win_probability}%\n${team2}: ${p?.team2_win_probability}%"
+                    val sb = StringBuilder()
+                    sb.append("PREDICTION: $team1 vs $team2\n")
+                    sb.append("==============================\n\n")
+                    sb.append("WINNER: ${p?.predicted_winner}\n")
+                    sb.append("Score: ${p?.predicted_score}\n\n")
+                    sb.append("$team1: ${p?.team1_win_probability}%\n")
+                    sb.append("$team2: ${p?.team2_win_probability}%\n\n")
+                    sb.append("Confidence: ${p?.confidence}% (${p?.confidence_level})\n\n")
+                    sb.append("KEY FACTORS:\n")
+                    p?.key_factors?.forEach { sb.append("- $it\n") }
+                    resultText.text = sb.toString()
                 }
             }
             override fun onFailure(call: Call<PredictionResponse>, t: Throwable) { showLoading(false) }
