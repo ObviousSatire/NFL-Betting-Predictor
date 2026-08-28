@@ -1,4 +1,6 @@
 import requests
+import joblib
+import pandas as pd
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 from datetime import datetime
@@ -287,6 +289,57 @@ def get_player_stats():
                         }
                         break
     if not player_id:
+        # Fall back to preseason stats search
+        try:
+            for season in [2025, 2026]:
+                for seasontype in [1, 2]:
+                    sched_url = f'{ESPN_SITE_V2}/teams/{TEAM_MAP.get(team, "")}/schedule?season={season}&seasontype={seasontype}'
+                    try:
+                        sched = requests.get(sched_url, timeout=10).json()
+                    except:
+                        continue
+                    for event in sched.get('events', []):
+                        event_id = event.get('id', '')
+                        if not event_id:
+                            continue
+                        try:
+                            summary = requests.get(f'{ESPN_SITE_V2}/summary?event={event_id}', timeout=10).json()
+                        except:
+                            continue
+                        if 'boxscore' not in summary:
+                            continue
+                        for team_data in summary['boxscore'].get('players', []):
+                            for stat_group in team_data.get('statistics', []):
+                                for athlete in stat_group.get('athletes', []):
+                                    athlete_name = athlete.get('athlete', {}).get('displayName', '')
+                                    if name.lower() in athlete_name.lower():
+                                        stats = {}
+                                        raw_stats = athlete.get('stats', [])
+                                        if len(raw_stats) >= 2:
+                                            if stat_group['name'] == 'passing':
+                                                stats['completions'] = raw_stats[0].split('/')[0]
+                                                stats['passing_attempts'] = raw_stats[0].split('/')[1]
+                                                stats['passing_yards'] = int(raw_stats[1])
+                                                if len(raw_stats) >= 5:
+                                                    stats['passing_tds'] = int(raw_stats[3])
+                                            elif stat_group['name'] == 'rushing':
+                                                stats['rushing_attempts'] = int(raw_stats[0]) if raw_stats[0].isdigit() else 0
+                                                stats['rushing_yards'] = int(raw_stats[1])
+                                            elif stat_group['name'] == 'receiving':
+                                                stats['receptions'] = int(raw_stats[0]) if raw_stats[0].isdigit() else 0
+                                                stats['receiving_yards'] = int(raw_stats[1])
+                                        if stats:
+                                            return jsonify({
+                                                "id": str(athlete.get('athlete', {}).get('id', '')),
+                                                "name": athlete_name,
+                                                "position": "N/A",
+                                                "jersey": "N/A",
+                                                "team": team,
+                                                "injured": False,
+                                                "stats": stats
+                                            })
+        except:
+            pass
         return jsonify({"error": "Player not found"}), 404
     stats = get_player_stats_sportsipy(name, team)
     if stats:
@@ -443,81 +496,182 @@ def get_win_loss():
 def predict_winner():
     team1 = request.args.get('team1')
     team2 = request.args.get('team2')
-    if not team1 or not team2 or team1 not in TEAM_MAP or team2 not in TEAM_MAP:
+    if not team1 or not team2:
         return jsonify({"error": "Invalid teams"}), 400
-    def get_win_pct(t):
-        url = f"{ESPN_SITE_V2}/teams/{TEAM_MAP[t]}"
-        data = get_cached_or_fetch(url, f"team_{TEAM_MAP[t]}")
+    
+    try:
+        # Load ML models
+        rf = joblib.load('ml_models/random_forest.pkl')
+        gb = joblib.load('ml_models/gradient_boosting.pkl')
+        strengths = joblib.load('ml_models/team_strengths.pkl')
+    except:
+        rf = gb = None
+        strengths = {}
+    
+    t1_abbr = TEAM_MAP.get(team1, '').upper()
+    t2_abbr = TEAM_MAP.get(team2, '').upper()
+    
+    # Fetch live stats from ESPN
+    def get_team_data(team):
+        abbr = TEAM_MAP.get(team, '')
+        url = f"{ESPN_SITE_V2}/teams/{abbr}"
+        data = get_cached_or_fetch(url, f"team_{abbr}")
+        rec = "0-0"
+        pf = pa = 0
         if data and 'team' in data:
             for item in data['team']['record'].get('items', []):
                 if item.get('type') == 'total':
                     rec = item.get('summary', '0-0')
-                    if '-' in rec:
-                        w, l = map(int, rec.split('-'))
-                        if w + l > 0: return w / (w + l)
-        return 0.5
-    p1 = get_win_pct(team1)
-    p2 = get_win_pct(team2)
-    total = p1 + p2
-    prob1 = (p1 / total * 100) if total > 0 else 50.0
-    prob2 = (p2 / total * 100) if total > 0 else 50.0
+                    for stat in item.get('stats', []):
+                        if stat.get('name') == 'pointsFor': pf = int(stat.get('value', 0))
+                        elif stat.get('name') == 'pointsAgainst': pa = int(stat.get('value', 0))
+        w = l = 0
+        if '-' in rec:
+            try:
+                w, l = map(int, rec.split('-'))
+            except:
+                pass
+        return {'record': rec, 'wins': w, 'losses': l, 'pf': pf, 'pa': pa}
+    
+    d1 = get_team_data(team1)
+    d2 = get_team_data(team2)
+    
+    # Get weather
+    w1 = get_weather_from_api(team1)
+    w2 = get_weather_from_api(team2)
+    
+    # Get injuries
+    inj1 = get_cached_or_fetch(f"{ESPN_SITE_V2}/injuries", "injuries")
+    inj_count1 = inj_count2 = 0
+    if inj1:
+        for t in inj1.get('injuries', []):
+            if team1.lower() in t.get('displayName', '').lower():
+                inj_count1 = len(t.get('injuries', []))
+            if team2.lower() in t.get('displayName', '').lower():
+                inj_count2 = len(t.get('injuries', []))
+    
+    # ---- WEIGHTED SCORING ----
+    score1 = score2 = 0.0
+    factors = []
+    
+    # 1. Win % (30%)
+    total1 = d1['wins'] + d1['losses']
+    total2 = d2['wins'] + d2['losses']
+    wp1 = (d1['wins'] / total1) if total1 > 0 else 0.5
+    wp2 = (d2['wins'] / total2) if total2 > 0 else 0.5
+    score1 += wp1 * 30
+    score2 += wp2 * 30
+    factors.append(f"Win%: {team1} {wp1:.0%} vs {team2} {wp2:.0%}")
+    
+    # 2. Point differential (20%)
+    pd1 = d1['pf'] - d1['pa']
+    pd2 = d2['pf'] - d2['pa']
+    pd_norm = max(abs(pd1) + abs(pd2), 1)
+    score1 += ((pd1 - pd2) / pd_norm + 1) * 10
+    score2 += ((pd2 - pd1) / pd_norm + 1) * 10
+    factors.append(f"Point diff: {team1} {pd1:+d} vs {team2} {pd2:+d}")
+    
+    # 3. Home field (15%) - team1 is home
+    score1 += 15
+    factors.append(f"Home field: {team1}")
+    
+    # 4. Injuries (10%)
+    inj_impact1 = max(0, 10 - inj_count1 * 2)
+    inj_impact2 = max(0, 10 - inj_count2 * 2)
+    score1 += inj_impact1
+    score2 += inj_impact2
+    factors.append(f"Injuries: {team1} {inj_count1} out vs {team2} {inj_count2} out")
+    
+    # 5. Weather (5%)
+    weather_impact1 = weather_impact2 = 5
+    if w1 and w1.get('wind_speed', 0) > 15:
+        weather_impact1 = 2
+        factors.append(f"Weather: High wind at {team1} stadium")
+    if w2 and w2.get('wind_speed', 0) > 15:
+        weather_impact2 = 2
+    score1 += weather_impact1
+    score2 += weather_impact2
+    
+    # 6. Recent form - last 5 (15%)
+    def get_recent_form(abbr):
+        sched_url = f"{ESPN_SITE_V2}/teams/{abbr}/schedule"
+        sched = get_cached_or_fetch(sched_url, f"sched_{abbr}")
+        wins = 0
+        total = 0
+        if sched and 'events' in sched:
+            for ev in sched['events'][-5:]:
+                comp = ev.get('competitions', [{}])[0]
+                for c in comp.get('competitors', []):
+                    if c.get('team', {}).get('abbreviation', '').upper() == abbr.upper():
+                        total += 1
+                        if c.get('winner', False):
+                            wins += 1
+        return (wins / total) if total > 0 else 0.5
+    
+    rf1 = get_recent_form(t1_abbr)
+    rf2 = get_recent_form(t2_abbr)
+    score1 += rf1 * 15
+    score2 += rf2 * 15
+    factors.append(f"Recent form: {team1} {rf1:.0%} vs {team2} {rf2:.0%}")
+    
+    # 7. ML model boost (5%)
+    if rf and gb:
+        hs = strengths.get(t1_abbr, 0)
+        as_ = strengths.get(t2_abbr, 0)
+        diff = hs - as_
+        feats = pd.DataFrame([[hs, as_, diff]], columns=['home_strength','away_strength','strength_diff'])
+        ml_prob = (rf.predict_proba(feats)[0][1] + gb.predict_proba(feats)[0][1]) / 2
+        score1 += ml_prob * 5
+        score2 += (1 - ml_prob) * 5
+        factors.append(f"ML model: {ml_prob:.0%} for {team1}")
+    
+    # Final probabilities
+    total_score = score1 + score2
+    prob1 = (score1 / total_score * 100) if total_score > 0 else 50.0
+    prob2 = 100 - prob1
+    
+    # Confidence
+    conf = abs(prob1 - prob2)
+    level = "HIGH" if conf > 20 else "MEDIUM" if conf > 10 else "LOW"
+    
+    # Score prediction
+    avg_offense1 = (d1['pf'] / total1) if total1 > 0 else 24
+    avg_offense2 = (d2['pf'] / total2) if total2 > 0 else 21
+    avg_defense1 = (d1['pa'] / total1) if total1 > 0 else 21
+    avg_defense2 = (d2['pa'] / total2) if total2 > 0 else 24
+    
+    pred1 = (avg_offense1 + avg_defense2) / 2
+    pred2 = (avg_offense2 + avg_defense1) / 2
+    
+    # Weather adjustment
+    if w1 and w1.get('wind_speed', 0) > 15:
+        pred1 -= 2
+        pred2 -= 2
+    if w1 and w1.get('precipitation', 0) > 50:
+        pred1 -= 3
+        pred2 -= 3
+    
+    # Home field bonus
+    pred1 += 2
+    
+    # Injury adjustment (cap at 7 points)
+    pred1 -= min(inj_count1, 5) * 1.5
+    pred2 -= min(inj_count2, 5) * 1.5
+    
+    final1 = max(14, int(round(pred1)))
+    final2 = max(14, int(round(pred2)))
+    
     return jsonify({
         "team1": team1, "team2": team2,
-        "team1_win_probability": round(prob1, 1), "team2_win_probability": round(prob2, 1),
+        "team1_win_probability": round(prob1, 1),
+        "team2_win_probability": round(prob2, 1),
         "predicted_winner": team1 if prob1 > prob2 else team2,
-        "confidence": round(abs(prob1 - prob2), 1),
-        "key_factors": [f"{team1} record: {p1:.1%}", f"{team2} record: {p2:.1%}"]
+        "predicted_score": f"{final1}-{final2}",
+        "confidence": round(conf, 1),
+        "confidence_level": level,
+        "key_factors": factors
     })
-
-@app.route('/manual_override', methods=['POST'])
-def set_manual_override():
-    data = request.get_json()
-    team = data.get('team')
-    stat = data.get('stat')
-    value = data.get('value')
-    if not team or not stat or value is None:
-        return jsonify({"error": "team, stat, value required"}), 400
-    if team not in manual_overrides:
-        manual_overrides[team] = {}
-    manual_overrides[team][stat] = str(value)
-    return jsonify({"status": "ok", "team": team, "overrides": manual_overrides[team]})
-
-@app.route('/manual_overrides', methods=['GET'])
-def get_manual_overrides():
-    team = request.args.get('team')
-    if team:
-        return jsonify({team: manual_overrides.get(team, {})})
-    return jsonify(manual_overrides)
-
-@app.route('/live_scores', methods=['GET'])
-def get_live_scores():
-    url = f"{ESPN_SITE_V2}/scoreboard?dates=2026"
-    try:
-        response = requests.get(url, timeout=10)
-        if response.status_code != 200:
-            return jsonify({"scores": []})
-        data = response.json()
-        games = []
-        for event in data.get('events', []):
-            status = event.get('status', {}).get('type', {})
-            state = status.get('description', 'Scheduled')
-            detail = status.get('shortDetail', '')
-            competitors = event.get('competitions', [{}])[0].get('competitors', [])
-            if len(competitors) >= 2:
-                away = competitors[0]
-                home = competitors[1]
-                games.append({
-                    "away": away.get('team', {}).get('abbreviation', 'N/A'),
-                    "home": home.get('team', {}).get('abbreviation', 'N/A'),
-                    "away_score": int(away.get('score', 0)),
-                    "home_score": int(home.get('score', 0)),
-                    "status": state,
-                    "detail": detail
-                })
-        live = [g for g in games if g["status"] in ["In Progress", "Halftime"]]
-        return jsonify({"scores": live if live else games[:5]})
-    except:
-        return jsonify({"scores": []})
+    
 
 @app.route('/preseason_stats', methods=['GET'])
 def get_preseason_stats():
