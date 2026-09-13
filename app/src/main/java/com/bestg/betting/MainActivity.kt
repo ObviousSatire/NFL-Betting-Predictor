@@ -92,7 +92,8 @@ class MainActivity : AppCompatActivity() {
         }
         
         setStatsMode()
-        Handler(Looper.getMainLooper()).postDelayed({ getTeamStats() }, 500)
+        showUpcomingGames()
+        Handler(Looper.getMainLooper()).postDelayed({ getTeamStats() }, 3000)
         fetchLiveScores()
         startScoreUpdates()
     }
@@ -167,8 +168,8 @@ class MainActivity : AppCompatActivity() {
         teamSpinner.visibility = View.VISIBLE
         playerSpinner.visibility = View.GONE
         val numberedTeams = allNFLTeams.mapIndexed { index, team -> "${index + 1}. $team" }
-        val teamAdapter = ArrayAdapter(this, android.R.layout.simple_spinner_item, numberedTeams)
-        teamAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+        val teamAdapter = ArrayAdapter(this, R.layout.spinner_item, numberedTeams)
+        teamAdapter.setDropDownViewResource(R.layout.spinner_dropdown_item)
         teamSpinner.adapter = teamAdapter
         teamSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
@@ -183,8 +184,8 @@ class MainActivity : AppCompatActivity() {
         teamSpinner.visibility = View.VISIBLE
         playerSpinner.visibility = View.VISIBLE
         val numberedTeams = allNFLTeams.mapIndexed { index, team -> "${index + 1}. $team" }
-        val teamAdapter = ArrayAdapter(this, android.R.layout.simple_spinner_item, numberedTeams)
-        teamAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+        val teamAdapter = ArrayAdapter(this, R.layout.spinner_item, numberedTeams)
+        teamAdapter.setDropDownViewResource(R.layout.spinner_dropdown_item)
         teamSpinner.adapter = teamAdapter
         teamSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
@@ -199,8 +200,8 @@ class MainActivity : AppCompatActivity() {
         teamSpinner.visibility = View.VISIBLE
         playerSpinner.visibility = View.VISIBLE
         val numberedTeams = allNFLTeams.mapIndexed { index, team -> "${index + 1}. $team" }
-        val teamAdapter = ArrayAdapter(this, android.R.layout.simple_spinner_item, numberedTeams)
-        teamAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+        val teamAdapter = ArrayAdapter(this, R.layout.spinner_item, numberedTeams)
+        teamAdapter.setDropDownViewResource(R.layout.spinner_dropdown_item)
         teamSpinner.adapter = teamAdapter
         teamSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
@@ -214,8 +215,8 @@ class MainActivity : AppCompatActivity() {
     
     private fun updateOpponentSpinner() {
         val opponents = allNFLTeams.filter { it != currentTeam }
-        val adapter = ArrayAdapter(this, android.R.layout.simple_spinner_item, opponents.mapIndexed { i, t -> "${i+1}. $t" })
-        adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+        val adapter = ArrayAdapter(this, R.layout.spinner_item, opponents.mapIndexed { i, t -> "${i+1}. $t" })
+        adapter.setDropDownViewResource(R.layout.spinner_dropdown_item)
         playerSpinner.adapter = adapter
         playerSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
@@ -238,8 +239,8 @@ class MainActivity : AppCompatActivity() {
                     val playerNames = players.mapIndexed { index, player -> 
                         "${index + 1}. ${player.name} (${player.position})${if (player.injured == true) " [INJ]" else ""}"
                     }
-                    val adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_item, playerNames)
-                    adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+                    val adapter = ArrayAdapter(this@MainActivity, R.layout.spinner_item, playerNames)
+                    adapter.setDropDownViewResource(R.layout.spinner_dropdown_item)
                     playerSpinner.adapter = adapter
                     playerSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
                         override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
@@ -445,6 +446,27 @@ class MainActivity : AppCompatActivity() {
         })
     }
     
+    private fun showUpcomingGames() {
+        apiService.getLiveScores().enqueue(object : Callback<LiveScoresResponse> {
+            override fun onResponse(call: Call<LiveScoresResponse>, response: Response<LiveScoresResponse>) {
+                if (response.isSuccessful) {
+                    val scores = response.body()?.scores ?: emptyList()
+                    if (scores.isNotEmpty()) {
+                        val sb = StringBuilder()
+                        sb.append("UPCOMING / LIVE GAMES\n")
+                        sb.append("==============================\n\n")
+                        for (s in scores) {
+                            sb.append("${s.away} @ ${s.home}\n")
+                            sb.append("  ${s.detail}\n\n")
+                        }
+                        resultText.text = sb.toString()
+                    }
+                }
+            }
+            override fun onFailure(call: Call<LiveScoresResponse>, t: Throwable) {}
+        })
+    }
+
     private fun showHelp() {
         resultText.text = "HELP - $serverIp:5000\n\nSTATS: Team info\nPLAYER: Player stats\nPREDICT: Win prediction\nLong press HELP for settings"
     }
