@@ -347,6 +347,10 @@ def get_player_stats():
         return jsonify(player_info)
     ps_url = f'{ESPN_SITE_V2}/teams/{TEAM_MAP.get(team, "")}/schedule?season=2026&seasontype=1'
     ps_data = get_cached_or_fetch(ps_url, f'preseason_{team}')
+    if not ps_data or 'events' not in ps_data:
+        ps_data = get_cached_or_fetch(f'{ESPN_SITE_V2}/teams/{TEAM_MAP.get(team, "")}/schedule?season=2026&seasontype=2', f'reg2026_{team}')
+    if not ps_data or 'events' not in ps_data:
+        ps_data = get_cached_or_fetch(f'{ESPN_SITE_V2}/teams/{TEAM_MAP.get(team, "")}/schedule?season=2025&seasontype=2', f'reg2025_{team}')
     if ps_data and 'events' in ps_data:
         for event in ps_data['events']:
             for comp in event.get('competitions', []):
@@ -512,8 +516,39 @@ def predict_winner():
     t2_abbr = TEAM_MAP.get(team2, '').upper()
     
     # Fetch live stats from ESPN
+    def count_schedule(abbr, season, seasontype):
+        sched_url = f"{ESPN_SITE_V2}/teams/{abbr}/schedule?season={season}&seasontype={seasontype}"
+        sched = get_cached_or_fetch(sched_url, f"sched_{season}_{seasontype}_{abbr}")
+        w = l = pf = pa = 0
+        if sched and 'events' in sched:
+            for ev in sched['events']:
+                comp = ev.get('competitions', [{}])[0]
+                status = comp.get('status', {}).get('type', {})
+                if not status.get('completed'):
+                    continue
+                for c in comp.get('competitors', []):
+                    if c.get('team', {}).get('abbreviation', '').upper() == abbr.upper():
+                        sv = c.get('score', 0)
+                        if isinstance(sv, dict): sv = sv.get('value', 0)
+                        sv = int(sv) if sv else 0
+                        opp_score = 0
+                        for o in comp.get('competitors', []):
+                            if o is not c:
+                                ov = o.get('score', 0)
+                                if isinstance(ov, dict): ov = ov.get('value', 0)
+                                opp_score = int(ov) if ov else 0
+                                break
+                        pf += sv
+                        pa += opp_score
+                        if c.get('winner', False):
+                            w += 1
+                        else:
+                            l += 1
+        return w, l, pf, pa
+
     def get_team_data(team):
         abbr = TEAM_MAP.get(team, '')
+        # Try current season from ESPN team endpoint
         url = f"{ESPN_SITE_V2}/teams/{abbr}"
         data = get_cached_or_fetch(url, f"team_{abbr}")
         rec = "0-0"
@@ -531,6 +566,19 @@ def predict_winner():
                 w, l = map(int, rec.split('-'))
             except:
                 pass
+        # Current season has real games? Use it. Otherwise pull most recent completed games.
+        if w + l == 0:
+            # Try 2026 preseason first
+            w, l, pf, pa = count_schedule(abbr, 2026, 1)
+            # If nothing yet, try 2026 regular season
+            if w + l == 0:
+                w2, l2, pf2, pa2 = count_schedule(abbr, 2026, 2)
+                if w2 + l2 > 0:
+                    w, l, pf, pa = w2, l2, pf2, pa2
+            # Fall back to 2025 regular season
+            if w + l == 0:
+                w, l, pf, pa = count_schedule(abbr, 2025, 2)
+            rec = f"{w}-{l}"
         return {'record': rec, 'wins': w, 'losses': l, 'pf': pf, 'pa': pa}
     
     d1 = get_team_data(team1)
@@ -545,10 +593,18 @@ def predict_winner():
     inj_count1 = inj_count2 = 0
     if inj1:
         for t in inj1.get('injuries', []):
-            if team1.lower() in t.get('displayName', '').lower():
+            team_name = t.get('displayName', '').lower().strip()
+            if team_name == team1.lower().strip():
                 inj_count1 = len(t.get('injuries', []))
-            if team2.lower() in t.get('displayName', '').lower():
+            elif team_name == team2.lower().strip():
                 inj_count2 = len(t.get('injuries', []))
+    # ESPN returns fake "25" for every team during offseason - detect and zero it
+    # Only trust injury data if the two teams actually differ
+    if inj_count1 == inj_count2 and inj_count1 >= 20:
+        inj_count1 = inj_count2 = 0
+    # Sanity cap
+    inj_count1 = min(inj_count1, 15)
+    inj_count2 = min(inj_count2, 15)
     
     # ---- WEIGHTED SCORING ----
     score1 = score2 = 0.0
@@ -559,6 +615,11 @@ def predict_winner():
     total2 = d2['wins'] + d2['losses']
     wp1 = (d1['wins'] / total1) if total1 > 0 else 0.5
     wp2 = (d2['wins'] / total2) if total2 > 0 else 0.5
+    # Weight by games played - teams with few games contribute less
+    wp1_weight = min(total1 / 10.0, 1.0)
+    wp2_weight = min(total2 / 10.0, 1.0)
+    wp1 = 0.5 + (wp1 - 0.5) * wp1_weight
+    wp2 = 0.5 + (wp2 - 0.5) * wp2_weight
     score1 += wp1 * 30
     score2 += wp2 * 30
     factors.append(f"Win%: {team1} {wp1:.0%} vs {team2} {wp2:.0%}")
@@ -576,8 +637,8 @@ def predict_winner():
     factors.append(f"Home field: {team1}")
     
     # 4. Injuries (10%)
-    inj_impact1 = max(0, 10 - inj_count1 * 2)
-    inj_impact2 = max(0, 10 - inj_count2 * 2)
+    inj_impact1 = max(0, 10 - min(inj_count1, 10) * 0.8)
+    inj_impact2 = max(0, 10 - min(inj_count2, 10) * 0.8)
     score1 += inj_impact1
     score2 += inj_impact2
     factors.append(f"Injuries: {team1} {inj_count1} out vs {team2} {inj_count2} out")
@@ -594,19 +655,24 @@ def predict_winner():
     
     # 6. Recent form - last 5 (15%)
     def get_recent_form(abbr):
-        sched_url = f"{ESPN_SITE_V2}/teams/{abbr}/schedule"
-        sched = get_cached_or_fetch(sched_url, f"sched_{abbr}")
-        wins = 0
-        total = 0
-        if sched and 'events' in sched:
-            for ev in sched['events'][-5:]:
+        # Try 2026 regular season last 5
+        for season, stype in [(2026, 2), (2026, 1), (2025, 2)]:
+            sched_url = f"{ESPN_SITE_V2}/teams/{abbr}/schedule?season={season}&seasontype={stype}"
+            sched = get_cached_or_fetch(sched_url, f"recent_{season}_{stype}_{abbr}")
+            if not sched or 'events' not in sched:
+                continue
+            completed = []
+            for ev in sched['events']:
                 comp = ev.get('competitions', [{}])[0]
-                for c in comp.get('competitors', []):
-                    if c.get('team', {}).get('abbreviation', '').upper() == abbr.upper():
-                        total += 1
-                        if c.get('winner', False):
-                            wins += 1
-        return (wins / total) if total > 0 else 0.5
+                if comp.get('status', {}).get('type', {}).get('completed'):
+                    for c in comp.get('competitors', []):
+                        if c.get('team', {}).get('abbreviation', '').upper() == abbr.upper():
+                            completed.append(1 if c.get('winner', False) else 0)
+                            break
+            if completed:
+                last5 = completed[-5:]
+                return sum(last5) / len(last5)
+        return 0.5
     
     rf1 = get_recent_form(t1_abbr)
     rf2 = get_recent_form(t2_abbr)
@@ -725,6 +791,37 @@ def get_preseason_stats():
         return jsonify({'stats': None})
     except Exception as e:
         return jsonify({'stats': None, 'error': str(e)})
+
+
+@app.route('/live_scores', methods=['GET'])
+def get_live_scores():
+    url = f"{ESPN_SITE_V2}/scoreboard?dates=2026"
+    try:
+        response = requests.get(url, timeout=10)
+        if response.status_code != 200:
+            return jsonify({"scores": []})
+        data = response.json()
+        games = []
+        for event in data.get('events', []):
+            status = event.get('status', {}).get('type', {})
+            state = status.get('description', 'Scheduled')
+            detail = status.get('shortDetail', '')
+            competitors = event.get('competitions', [{}])[0].get('competitors', [])
+            if len(competitors) >= 2:
+                away = competitors[0]
+                home = competitors[1]
+                games.append({
+                    "away": away.get('team', {}).get('abbreviation', 'N/A'),
+                    "home": home.get('team', {}).get('abbreviation', 'N/A'),
+                    "away_score": int(away.get('score', 0)),
+                    "home_score": int(home.get('score', 0)),
+                    "status": state,
+                    "detail": detail
+                })
+        live = [g for g in games if g['status'] in ['In Progress', 'Halftime']]
+        return jsonify({"scores": live if live else games[:5]})
+    except:
+        return jsonify({"scores": []})
 
 if __name__ == "__main__":
     print("NFL API Running on http://localhost:5000")
