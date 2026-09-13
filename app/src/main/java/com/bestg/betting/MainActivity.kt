@@ -10,6 +10,7 @@ import android.app.AlertDialog
 import android.content.Context
 import android.content.SharedPreferences
 import androidx.appcompat.app.AppCompatActivity
+import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
 import com.google.android.material.button.MaterialButton
 import retrofit2.Call
 import retrofit2.Callback
@@ -47,6 +48,8 @@ class MainActivity : AppCompatActivity() {
     
     private val manualStats = mutableMapOf<String, MutableMap<String, String>>()
     private val scoreHandler = Handler(Looper.getMainLooper())
+    private lateinit var swipeRefresh: SwipeRefreshLayout
+    private val favoriteTeams = mutableSetOf<String>()
     
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -54,6 +57,7 @@ class MainActivity : AppCompatActivity() {
         
         sharedPrefs = getSharedPreferences("NFL_Betting_Prefs", Context.MODE_PRIVATE)
         loadManualOverrides()
+        favoriteTeams.addAll(sharedPrefs.getStringSet("favorite_teams", emptySet()) ?: emptySet())
         serverIp = sharedPrefs.getString("server_ip", "10.0.0.60") ?: "10.0.0.60"
         
         teamSpinner = findViewById(R.id.teamSpinner)
@@ -61,6 +65,7 @@ class MainActivity : AppCompatActivity() {
         resultText = findViewById(R.id.resultText)
         scoreBanner = findViewById(R.id.scoreBanner)
         loadingIndicator = findViewById(R.id.loadingIndicator)
+        swipeRefresh = findViewById(R.id.swipeRefresh)
         
         resultText.movementMethod = ScrollingMovementMethod()
         scoreBanner.isSelected = true
@@ -68,6 +73,15 @@ class MainActivity : AppCompatActivity() {
         setupRetrofit()
         
         playerSpinner.visibility = View.GONE
+        
+        swipeRefresh.setOnRefreshListener {
+            when (currentMode) {
+                "STATS" -> getTeamStats()
+                "PLAYER" -> getPlayerStats()
+                "PREDICT" -> fetchPrediction(currentTeam, opponentTeam)
+            }
+            fetchLiveScores()
+        }
         
         findViewById<MaterialButton>(R.id.testButton).setOnClickListener { testConnection() }
         findViewById<MaterialButton>(R.id.loadStatsButton).setOnClickListener { setStatsMode() }
@@ -132,17 +146,126 @@ class MainActivity : AppCompatActivity() {
     }
     
     private fun showOptionsDialog() {
-        val options = if (currentMode == "STATS") {
-            arrayOf("Change Server IP", "Manual Override Stats")
-        } else {
-            arrayOf("Change Server IP")
-        }
+        val options = mutableListOf("Change Server IP", "Toggle Favorite Team", "View Prediction Accuracy", "Live Game Predictions", "Betting Odds", "Player Props")
+        if (currentMode == "STATS") options.add("Manual Override Stats")
         AlertDialog.Builder(this)
             .setTitle("Options")
-            .setItems(options) { _, which ->
-                if (options[which] == "Change Server IP") showServerIpDialog()
-                else showManualOverrideDialog()
+            .setItems(options.toTypedArray()) { _, which ->
+                when (options[which]) {
+                    "Change Server IP" -> showServerIpDialog()
+                    "Toggle Favorite Team" -> toggleFavorite()
+                    "View Prediction Accuracy" -> showAccuracy()
+                    "Live Game Predictions" -> showLivePredictions()
+                    "Betting Odds" -> showOdds()
+                    "Player Props" -> showPlayerProps()
+                    "Manual Override Stats" -> showManualOverrideDialog()
+                }
             }.show()
+    }
+    
+    private fun toggleFavorite() {
+        if (currentTeam.isEmpty()) return
+        if (favoriteTeams.contains(currentTeam)) {
+            favoriteTeams.remove(currentTeam)
+            Toast.makeText(this, "$currentTeam removed", Toast.LENGTH_SHORT).show()
+        } else {
+            favoriteTeams.add(currentTeam)
+            Toast.makeText(this, "$currentTeam added", Toast.LENGTH_SHORT).show()
+        }
+        sharedPrefs.edit().putStringSet("favorite_teams", favoriteTeams).apply()
+    }
+    
+    private fun showAccuracy() {
+        apiService.getAccuracy().enqueue(object : Callback<AccuracyResponse> {
+            override fun onResponse(call: Call<AccuracyResponse>, response: Response<AccuracyResponse>) {
+                if (response.isSuccessful) {
+                    val a = response.body()
+                    resultText.text = "PREDICTION ACCURACY\n==============================\n\nTotal: ${a?.total_predictions ?: 0}\nCorrect: ${a?.correct ?: 0}\nAccuracy: ${a?.accuracy ?: 0.0}%"
+                } else {
+                    resultText.text = "No predictions recorded yet"
+                }
+            }
+            override fun onFailure(call: Call<AccuracyResponse>, t: Throwable) {
+                resultText.text = "Could not load accuracy"
+            }
+        })
+    }
+    
+    private fun showLivePredictions() {
+        resultText.text = "Loading live predictions..."
+        apiService.getLivePredictions().enqueue(object : Callback<LivePredictionResponse> {
+            override fun onResponse(call: Call<LivePredictionResponse>, response: Response<LivePredictionResponse>) {
+                val games = response.body()?.live ?: emptyList()
+                if (games.isEmpty()) {
+                    resultText.text = "No live games right now"
+                    return
+                }
+                val sb = StringBuilder()
+                sb.append("LIVE GAME PREDICTIONS\n==============================\n\n")
+                for (g in games) {
+                    sb.append("${g.away} ${g.away_score} - ${g.home_score} ${g.home}\n")
+                    sb.append("  ${g.clock}\n")
+                    sb.append("  Live win prob: ${g.home} ${g.home_win_probability}% / ${g.away} ${g.away_win_probability}%\n\n")
+                }
+                resultText.text = sb.toString()
+            }
+            override fun onFailure(call: Call<LivePredictionResponse>, t: Throwable) {
+                resultText.text = "Failed to load live predictions"
+            }
+        })
+    }
+    
+    private fun showOdds() {
+        resultText.text = "Loading odds..."
+        apiService.getOdds().enqueue(object : Callback<OddsResponse> {
+            override fun onResponse(call: Call<OddsResponse>, response: Response<OddsResponse>) {
+                val odds = response.body()?.odds ?: emptyList()
+                if (odds.isEmpty()) {
+                    resultText.text = "No odds available"
+                    return
+                }
+                val sb = StringBuilder()
+                sb.append("BETTING ODDS\n==============================\n\n")
+                for (o in odds) {
+                    sb.append("${o.game}\n")
+                    sb.append("  Spread: ${o.spread}\n")
+                    sb.append("  O/U: ${o.over_under}\n")
+                    sb.append("  Home ML: ${o.home_ml} | Away ML: ${o.away_ml}\n")
+                    sb.append("  Source: ${o.provider}\n\n")
+                }
+                resultText.text = sb.toString()
+            }
+            override fun onFailure(call: Call<OddsResponse>, t: Throwable) {
+                resultText.text = "Failed to load odds"
+            }
+        })
+    }
+    
+    private fun showPlayerProps() {
+        if (currentPlayer.isEmpty() || currentTeam.isEmpty()) {
+            resultText.text = "Select a player first (PLAYER mode)"
+            return
+        }
+        resultText.text = "Loading props for $currentPlayer..."
+        apiService.getPlayerProps(currentPlayer, currentTeam).enqueue(object : Callback<PlayerPropsResponse> {
+            override fun onResponse(call: Call<PlayerPropsResponse>, response: Response<PlayerPropsResponse>) {
+                val p = response.body()
+                val sb = StringBuilder()
+                sb.append("PLAYER PROPS: ${p?.player ?: currentPlayer}\n==============================\n\n")
+                if (p?.props.isNullOrEmpty()) {
+                    sb.append("No prop data available")
+                } else {
+                    for (prop in (p?.props ?: emptyList())) {
+                        sb.append("${prop.stat}: ${prop.line}\n")
+                        sb.append("  Recommendation: ${prop.recommendation}\n\n")
+                    }
+                }
+                resultText.text = sb.toString()
+            }
+            override fun onFailure(call: Call<PlayerPropsResponse>, t: Throwable) {
+                resultText.text = "Failed to load props"
+            }
+        })
     }
     
     private fun showServerIpDialog() {
@@ -473,5 +596,8 @@ class MainActivity : AppCompatActivity() {
         resultText.text = "HELP - $serverIp:5000\n\nSTATS: Team info\nPLAYER: Player stats\nPREDICT: Win prediction\nLong press HELP for settings"
     }
     
-    private fun showLoading(show: Boolean) { loadingIndicator.visibility = if (show) View.VISIBLE else View.GONE }
+    private fun showLoading(show: Boolean) {
+        loadingIndicator.visibility = if (show) View.VISIBLE else View.GONE
+        if (!show && ::swipeRefresh.isInitialized) swipeRefresh.isRefreshing = false
+    }
 }

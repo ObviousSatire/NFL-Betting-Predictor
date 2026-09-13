@@ -35,6 +35,18 @@ interface ApiService {
     @GET("live_scores")
     fun getLiveScores(): Call<LiveScoresResponse>
 
+    @GET("prediction_accuracy")
+    fun getAccuracy(): Call<AccuracyResponse>
+
+    @GET("live_prediction")
+    fun getLivePredictions(): Call<LivePredictionResponse>
+
+    @GET("odds")
+    fun getOdds(): Call<OddsResponse>
+
+    @GET("player_props")
+    fun getPlayerProps(@Query("name") name: String, @Query("team") team: String): Call<PlayerPropsResponse>
+
     @GET("preseason_stats")
     fun getPreseasonStats(@Query("team") team: String, @Query("name") name: String): Call<PreseasonStatsResponse>
 }
@@ -54,4 +66,11 @@ data class PredictionResponse(val team1: String?, val team2: String?, val team1_
 data class RosterResponse(val team: String?, val players: List<PlayerInfo>?)
 data class LiveScore(val away: String, val home: String, val away_score: Int, val home_score: Int, val status: String, val detail: String)
 data class LiveScoresResponse(val scores: List<LiveScore>)
+data class AccuracyResponse(val total_predictions: Int?, val correct: Int?, val accuracy: Double?)
+data class LivePrediction(val home: String, val away: String, val home_score: Int, val away_score: Int, val clock: String, val home_win_probability: Double, val away_win_probability: Double)
+data class LivePredictionResponse(val live: List<LivePrediction>)
+data class OddsGame(val game: String, val provider: String, val spread: String, val over_under: Any?, val home_ml: Any?, val away_ml: Any?)
+data class OddsResponse(val odds: List<OddsGame>)
+data class PlayerProp(val stat: String, val line: Int, val recommendation: String)
+data class PlayerPropsResponse(val player: String?, val team: String?, val props: List<PlayerProp>?)
 data class PreseasonStatsResponse(val stats: PlayerSeasonStats?)

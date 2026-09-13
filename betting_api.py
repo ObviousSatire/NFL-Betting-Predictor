@@ -5,6 +5,7 @@ from flask import Flask, jsonify, request
 from flask_cors import CORS
 from datetime import datetime
 import time
+import os
 
 app = Flask(__name__)
 CORS(app)
@@ -25,6 +26,28 @@ ESPN_SITE_V2 = "https://site.api.espn.com/apis/site/v2/sports/football/nfl"
 
 # Manual overrides storage
 manual_overrides = {}
+
+# Prediction history tracking
+import json as json_lib
+PREDICTIONS_FILE = "prediction_history.json"
+
+def load_prediction_history():
+    try:
+        if os.path.exists(PREDICTIONS_FILE):
+            with open(PREDICTIONS_FILE, 'r') as f:
+                return json_lib.load(f)
+    except:
+        pass
+    return []
+
+def save_prediction_history(history):
+    try:
+        with open(PREDICTIONS_FILE, 'w') as f:
+            json_lib.dump(history[-500:], f)  # keep last 500
+    except:
+        pass
+
+
 
 STADIUM_LOCATIONS = {
     "Buffalo Bills": {"city": "Buffalo", "lat": 42.7738, "lon": -78.7870, "stadium": "Highmark Stadium"},
@@ -813,6 +836,166 @@ def get_live_scores():
         return jsonify({"scores": live if live else games[:5]})
     except:
         return jsonify({"scores": []})
+
+
+@app.route('/prediction_accuracy', methods=['GET'])
+def get_prediction_accuracy():
+    history = load_prediction_history()
+    total = len(history)
+    correct = sum(1 for h in history if h.get('correct'))
+    accuracy = (correct / total * 100) if total > 0 else 0
+    return jsonify({
+        "total_predictions": total,
+        "correct": correct,
+        "accuracy": round(accuracy, 1),
+        "recent": history[-10:]
+    })
+
+@app.route('/record_prediction', methods=['POST'])
+def record_prediction():
+    data = request.get_json()
+    history = load_prediction_history()
+    history.append({
+        "team1": data.get('team1'),
+        "team2": data.get('team2'),
+        "predicted_winner": data.get('predicted_winner'),
+        "confidence": data.get('confidence'),
+        "actual_winner": data.get('actual_winner'),
+        "correct": data.get('predicted_winner') == data.get('actual_winner'),
+        "timestamp": time.time()
+    })
+    save_prediction_history(history)
+    return jsonify({"status": "recorded", "total": len(history)})
+
+
+@app.route('/live_prediction', methods=['GET'])
+def live_prediction():
+    """Prediction for a game currently in progress"""
+    url = f"{ESPN_SITE_V2}/scoreboard?dates=2026"
+    try:
+        data = requests.get(url, timeout=10).json()
+        results = []
+        for event in data.get('events', []):
+            status = event.get('status', {}).get('type', {})
+            if status.get('description') not in ['In Progress', 'Halftime']:
+                continue
+            comp = event.get('competitions', [{}])[0]
+            comps = comp.get('competitors', [])
+            if len(comps) < 2:
+                continue
+            home = next((x for x in comps if x.get('homeAway') == 'home'), comps[0])
+            away = next((x for x in comps if x.get('homeAway') == 'away'), comps[1])
+            hs = int(home.get('score', 0) or 0)
+            as_ = int(away.get('score', 0) or 0)
+            clock = status.get('shortDetail', '')
+            period = status.get('period', 0)
+            # Live win prob: start at 50, shift by score diff, amplify as game nears end
+            progress = min(period / 4.0, 1.0)
+            diff = hs - as_
+            prob_home = 50 + (diff * 8 * (0.3 + progress * 0.7))
+            prob_home = max(1, min(99, prob_home))
+            results.append({
+                "home": home.get('team', {}).get('abbreviation', ''),
+                "away": away.get('team', {}).get('abbreviation', ''),
+                "home_score": hs,
+                "away_score": as_,
+                "clock": clock,
+                "home_win_probability": round(prob_home, 1),
+                "away_win_probability": round(100 - prob_home, 1)
+            })
+        return jsonify({"live": results})
+    except Exception as e:
+        return jsonify({"live": [], "error": str(e)})
+
+@app.route('/odds', methods=['GET'])
+def get_odds():
+    """Try to fetch real odds from ESPN"""
+    url = f"{ESPN_SITE_V2}/scoreboard?dates=2026"
+    try:
+        data = requests.get(url, timeout=10).json()
+        results = []
+        for event in data.get('events', []):
+            comp = event.get('competitions', [{}])[0]
+            odds_list = comp.get('odds', [])
+            if not odds_list:
+                continue
+            odds = odds_list[0]
+            results.append({
+                "game": event.get('shortName', ''),
+                "provider": odds.get('provider', {}).get('name', 'ESPN'),
+                "spread": odds.get('details', 'N/A'),
+                "over_under": odds.get('overUnder', 'N/A'),
+                "home_ml": odds.get('homeTeamOdds', {}).get('moneyLine', 'N/A'),
+                "away_ml": odds.get('awayTeamOdds', {}).get('moneyLine', 'N/A')
+            })
+        return jsonify({"odds": results})
+    except Exception as e:
+        return jsonify({"odds": [], "error": str(e)})
+
+@app.route('/player_props', methods=['GET'])
+def player_props():
+    """Predict player stat lines for a given player"""
+    name = request.args.get('name')
+    team = request.args.get('team')
+    if not name or not team:
+        return jsonify({"error": "name and team required"}), 400
+    # Get player's recent stats
+    props = {"player": name, "team": team, "props": []}
+    for season, stype in [(2026, 1), (2026, 2), (2025, 2)]:
+        sched_url = f'{ESPN_SITE_V2}/teams/{TEAM_MAP.get(team, "")}/schedule?season={season}&seasontype={stype}'
+        try:
+            sched = requests.get(sched_url, timeout=10).json()
+        except:
+            continue
+        games_found = []
+        for event in reversed(sched.get('events', [])):
+            eid = event.get('id', '')
+            if not eid:
+                continue
+            try:
+                summary = requests.get(f'{ESPN_SITE_V2}/summary?event={eid}', timeout=10).json()
+            except:
+                continue
+            if 'boxscore' not in summary:
+                continue
+            for team_data in summary['boxscore'].get('players', []):
+                for stat_group in team_data.get('statistics', []):
+                    for athlete in stat_group.get('athletes', []):
+                        an = athlete.get('athlete', {}).get('displayName', '')
+                        if name.lower() in an.lower():
+                            raw = athlete.get('stats', [])
+                            if not raw:
+                                continue
+                            g = {"group": stat_group['name'], "raw": raw}
+                            games_found.append(g)
+                            break
+        if games_found:
+            # Average last 3 games
+            passing_yards = []
+            rushing_yards = []
+            receiving_yards = []
+            for g in games_found[:3]:
+                try:
+                    if g['group'] == 'passing' and len(g['raw']) >= 2:
+                        passing_yards.append(int(g['raw'][1]))
+                    elif g['group'] == 'rushing' and len(g['raw']) >= 2:
+                        rushing_yards.append(int(g['raw'][1]))
+                    elif g['group'] == 'receiving' and len(g['raw']) >= 2:
+                        receiving_yards.append(int(g['raw'][1]))
+                except:
+                    pass
+            if passing_yards:
+                avg = sum(passing_yards) / len(passing_yards)
+                props["props"].append({"stat": "Passing Yards", "line": round(avg), "recommendation": "OVER" if avg > 250 else "UNDER"})
+            if rushing_yards:
+                avg = sum(rushing_yards) / len(rushing_yards)
+                props["props"].append({"stat": "Rushing Yards", "line": round(avg), "recommendation": "OVER" if avg > 60 else "UNDER"})
+            if receiving_yards:
+                avg = sum(receiving_yards) / len(receiving_yards)
+                props["props"].append({"stat": "Receiving Yards", "line": round(avg), "recommendation": "OVER" if avg > 50 else "UNDER"})
+        if props["props"]:
+            return jsonify(props)
+    return jsonify(props)
 
 if __name__ == "__main__":
     print("NFL API Running on http://localhost:5000")
