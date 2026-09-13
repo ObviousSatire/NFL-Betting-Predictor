@@ -33,7 +33,7 @@
             android:id="@+id/teamSpinner"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
-            android:minHeight="56dp"
+            android:minHeight="64dp"
             android:layout_weight="1"
             android:background="@drawable/spinner_background"
             android:padding="4dp" />
@@ -42,7 +42,7 @@
             android:id="@+id/playerSpinner"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
-            android:minHeight="56dp"
+            android:minHeight="64dp"
             android:layout_weight="1"
             android:background="@drawable/spinner_background"
             android:padding="4dp"
@@ -85,7 +85,7 @@
         <com.google.android.material.button.MaterialButton
             android:id="@+id/testButton"
             android:layout_width="0dp"
-            android:layout_height="40dp"
+            android:layout_height="48dp"
             android:layout_weight="1"
             android:text="TEST"
             android:textSize="11sp"
@@ -94,7 +94,7 @@
         <com.google.android.material.button.MaterialButton
             android:id="@+id/loadStatsButton"
             android:layout_width="0dp"
-            android:layout_height="40dp"
+            android:layout_height="48dp"
             android:layout_weight="1"
             android:text="STATS"
             android:textSize="11sp"
@@ -104,7 +104,7 @@
         <com.google.android.material.button.MaterialButton
             android:id="@+id/loadPlayerButton"
             android:layout_width="0dp"
-            android:layout_height="40dp"
+            android:layout_height="48dp"
             android:layout_weight="1"
             android:text="PLAYER"
             android:textSize="11sp"
@@ -121,7 +121,7 @@
         <com.google.android.material.button.MaterialButton
             android:id="@+id/predictButton"
             android:layout_width="0dp"
-            android:layout_height="40dp"
+            android:layout_height="48dp"
             android:layout_weight="1"
             android:text="PREDICT"
             android:textSize="11sp"
@@ -130,7 +130,7 @@
         <com.google.android.material.button.MaterialButton
             android:id="@+id/refreshAllButton"
             android:layout_width="0dp"
-            android:layout_height="40dp"
+            android:layout_height="48dp"
             android:layout_weight="1"
             android:text="REFRESH"
             android:textSize="11sp"
@@ -140,7 +140,7 @@
         <com.google.android.material.button.MaterialButton
             android:id="@+id/clearButton"
             android:layout_width="0dp"
-            android:layout_height="40dp"
+            android:layout_height="48dp"
             android:layout_weight="1"
             android:text="CLEAR"
             android:textSize="11sp"
@@ -158,7 +158,7 @@
         <com.google.android.material.button.MaterialButton
             android:id="@+id/helpButton"
             android:layout_width="match_parent"
-            android:layout_height="40dp"
+            android:layout_height="48dp"
             android:text="HELP (Long Press for Settings)"
             android:textSize="11sp"
             android:backgroundTint="#e94560" />

@@ -384,17 +384,20 @@ def get_injuries():
         return jsonify({"error": "Could not fetch injuries"}), 500
     team_injuries = []
     for t in data.get('injuries', []):
-        if team and team.lower() in t.get('displayName', '').lower():
+        if team and team.lower() == t.get('displayName', '').lower():
             for inj in t.get('injuries', []):
+                athlete = inj.get('athlete', {})
+                injury_info = inj.get('injury', {})
                 team_injuries.append({
-                    "player": inj.get('athlete', {}).get('fullName', 'Unknown'),
-                    "position": inj.get('athlete', {}).get('position', {}).get('abbreviation', 'N/A'),
-                    "injury": inj.get('injury', {}).get('type', 'Unknown'),
+                    "player": athlete.get('displayName') or athlete.get('fullName', 'Unknown'),
+                    "position": athlete.get('position', {}).get('abbreviation', 'N/A'),
+                    "injury": injury_info.get('type') or injury_info.get('detail') or 'Unknown',
                     "status": inj.get('status', 'Unknown'),
-                    "date": inj.get('date', '')
+                    "date": inj.get('date', ''),
+                    "detail": injury_info.get('detail', '')
                 })
             break
-    return jsonify({"team": team or "All Teams", "injuries": team_injuries})
+    return jsonify({"team": team or "All Teams", "injuries": team_injuries, "count": len(team_injuries)})
 
 @app.route('/news', methods=['GET'])
 def get_news():
