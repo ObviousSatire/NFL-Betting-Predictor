@@ -49,6 +49,7 @@ class MainActivity : AppCompatActivity() {
     private val manualStats = mutableMapOf<String, MutableMap<String, String>>()
     private val scoreHandler = Handler(Looper.getMainLooper())
     private lateinit var swipeRefresh: SwipeRefreshLayout
+    private lateinit var gamesList: LinearLayout
     private val favoriteTeams = mutableSetOf<String>()
     private var currentGames: List<UpcomingGame> = emptyList()
     
@@ -67,6 +68,7 @@ class MainActivity : AppCompatActivity() {
         scoreBanner = findViewById(R.id.scoreBanner)
         loadingIndicator = findViewById(R.id.loadingIndicator)
         swipeRefresh = findViewById(R.id.swipeRefresh)
+        gamesList = findViewById(R.id.gamesList)
         
         resultText.movementMethod = ScrollingMovementMethod()
         scoreBanner.isSelected = true
@@ -289,6 +291,8 @@ class MainActivity : AppCompatActivity() {
     
     private fun setStatsMode() {
         currentMode = "STATS"
+        gamesList.visibility = View.GONE
+        resultText.visibility = View.VISIBLE
         teamSpinner.visibility = View.VISIBLE
         playerSpinner.visibility = View.GONE
         val numberedTeams = allNFLTeams.mapIndexed { index, team -> "${index + 1}. $team" }
@@ -305,6 +309,8 @@ class MainActivity : AppCompatActivity() {
     
     private fun setPlayerMode() {
         currentMode = "PLAYER"
+        gamesList.visibility = View.GONE
+        resultText.visibility = View.VISIBLE
         teamSpinner.visibility = View.VISIBLE
         playerSpinner.visibility = View.VISIBLE
         val numberedTeams = allNFLTeams.mapIndexed { index, team -> "${index + 1}. $team" }
@@ -323,35 +329,64 @@ class MainActivity : AppCompatActivity() {
         currentMode = "PREDICT"
         teamSpinner.visibility = View.GONE
         playerSpinner.visibility = View.GONE
-        resultText.text = "PREDICT MODE - loading today games..."
+        resultText.visibility = View.GONE
+        gamesList.visibility = View.VISIBLE
+        gamesList.removeAllViews()
+        val loadingText = TextView(this)
+        loadingText.text = "Loading games..."
+        loadingText.setTextColor(0xFFE0E0E0.toInt())
+        loadingText.textSize = 14f
+        loadingText.setPadding(16, 16, 16, 16)
+        gamesList.addView(loadingText)
+        
         apiService.getUpcomingGames().enqueue(object : Callback<UpcomingGamesResponse> {
             override fun onResponse(call: Call<UpcomingGamesResponse>, response: Response<UpcomingGamesResponse>) {
                 val games = response.body()?.games ?: emptyList()
+                gamesList.removeAllViews()
                 if (games.isEmpty()) {
-                    resultText.text = "No games available"
+                    val tv = TextView(this@MainActivity)
+                    tv.text = "No games this week"
+                    tv.setTextColor(0xFFE0E0E0.toInt())
+                    tv.setPadding(16, 16, 16, 16)
+                    gamesList.addView(tv)
                     return
                 }
-                val sb = StringBuilder()
-                sb.append("PICK A GAME")
-                sb.append("\n")
-                sb.append("==============================")
-                sb.append("\n\n")
-                games.forEachIndexed { i, g ->
+                for (g in games) {
+                    val row = TextView(this@MainActivity)
                     val tag = if (g.is_live) " [LIVE]" else ""
-                    sb.append((i + 1).toString() + ". " + g.away_full + " @ " + g.home_full + tag)
-                    sb.append("\n")
-                    if (g.is_live) {
-                        sb.append("   " + g.away + " " + g.away_score + " - " + g.home_score + " " + g.home + "  " + g.detail)
-                    } else {
-                        sb.append("   " + g.detail)
+                    val score = if (g.is_live) "  ${g.away} ${g.away_score} - ${g.home_score} ${g.home}" else ""
+                    row.text = "${g.away_full} @ ${g.home_full}$tag$score\n${g.detail}"
+                    row.setTextColor(0xFFFFD700.toInt())
+                    row.textSize = 15f
+                    row.setPadding(16, 16, 16, 16)
+                    val bg = android.graphics.drawable.GradientDrawable()
+                    bg.setColor(0xFF0F3460.toInt())
+                    bg.cornerRadius = 8f
+                    row.background = bg
+                    val lp = LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT
+                    )
+                    lp.setMargins(0, 0, 0, 12)
+                    row.layoutParams = lp
+                    row.isClickable = true
+                    row.setOnClickListener {
+                        currentTeam = g.home_full
+                        opponentTeam = g.away_full
+                        gamesList.visibility = View.GONE
+                        resultText.visibility = View.VISIBLE
+                        resultText.text = "Analyzing ${g.away_full} @ ${g.home_full}..."
+                        fetchPrediction(g.home_full, g.away_full)
                     }
-                    sb.append("\n\n")
+                    gamesList.addView(row)
                 }
-                resultText.text = sb.toString()
-                showGamePicker(games)
             }
             override fun onFailure(call: Call<UpcomingGamesResponse>, t: Throwable) {
-                resultText.text = "Failed: " + t.message
+                gamesList.removeAllViews()
+                val tv = TextView(this@MainActivity)
+                tv.text = "Failed: ${t.message}"
+                tv.setTextColor(0xFFE0E0E0.toInt())
+                gamesList.addView(tv)
             }
         })
     }

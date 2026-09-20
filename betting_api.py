@@ -19,6 +19,7 @@ except ImportError:
     print("Sportsipy not available")
 
 TOMORROW_API_KEY = "4jUTfSnJ2t7VJjG5zRKh5gR6K8m2JhyM"
+ODDS_API_KEY = "daebc38f7fa4559b6d3f77a82a1a16dc"
 
 cache = {}
 cache_timeout = 300
@@ -741,17 +742,26 @@ def predict_winner():
     final1 = max(14, int(round(pred1)))
     final2 = max(14, int(round(pred2)))
     
+    spread = final1 - final2
+    total = final1 + final2
+    if spread > 0:
+        spread_str = f"{team1} -{spread}"
+    elif spread < 0:
+        spread_str = f"{team2} -{abs(spread)}"
+    else:
+        spread_str = "Pick'em"
     return jsonify({
         "team1": team1, "team2": team2,
         "team1_win_probability": round(prob1, 1),
         "team2_win_probability": round(prob2, 1),
         "predicted_winner": team1 if prob1 > prob2 else team2,
         "predicted_score": f"{final1}-{final2}",
+        "predicted_spread": spread_str,
+        "predicted_total": total,
         "confidence": round(conf, 1),
         "confidence_level": level,
         "key_factors": factors
     })
-    
 
 @app.route('/preseason_stats', methods=['GET'])
 def get_preseason_stats():
@@ -842,13 +852,21 @@ def get_live_scores():
 def get_prediction_accuracy():
     history = load_prediction_history()
     total = len(history)
-    correct = sum(1 for h in history if h.get('correct'))
-    accuracy = (correct / total * 100) if total > 0 else 0
+    resolved = [h for h in history if h.get('correct') is not None]
+    correct = sum(1 for h in resolved if h.get('correct'))
+    accuracy = (correct / len(resolved) * 100) if resolved else 0
+    edge_picks = [h for h in resolved if h.get('edge') and abs(h.get('edge', 0)) >= 5]
+    edge_wins = sum(1 for h in edge_picks if h.get('correct'))
+    edge_accuracy = (edge_wins / len(edge_picks) * 100) if edge_picks else 0
+    recent = sorted(history, key=lambda x: x.get('timestamp', 0), reverse=True)[:10]
     return jsonify({
         "total_predictions": total,
+        "resolved": len(resolved),
         "correct": correct,
         "accuracy": round(accuracy, 1),
-        "recent": history[-10:]
+        "edge_picks": len(edge_picks),
+        "edge_accuracy": round(edge_accuracy, 1),
+        "recent": recent
     })
 
 @app.route('/record_prediction', methods=['POST'])
@@ -864,7 +882,6 @@ def record_prediction():
         "correct": data.get('predicted_winner') == data.get('actual_winner'),
         "timestamp": time.time()
     })
-    save_prediction_history(history)
     return jsonify({"status": "recorded", "total": len(history)})
 
 
@@ -1003,23 +1020,275 @@ def upcoming_games():
     url = f"{ESPN_SITE_V2}/scoreboard?dates=2026"
     try:
         data = requests.get(url, timeout=10).json()
+        # Get current week from API
+        current_week = data.get('week', {}).get('number', 1)
         games = []
         for event in data.get('events', []):
             status = event.get('status', {}).get('type', {})
             state = status.get('description', 'Scheduled')
             detail = status.get('shortDetail', '')
+            week_num = event.get('week', {}).get('number', 0)
+            if week_num != current_week:
+                continue
             comp = event.get('competitions', [{}])[0]
             comps = comp.get('competitors', [])
-            if len(comps) < 2: continue
-            home = next((x for x in comps if x.get('homeAway')=='home'), comps[0])
-            away = next((x for x in comps if x.get('homeAway')=='away'), comps[1])
-            games.append({'event_id': event.get('id',''), 'home_full': home.get('team',{}).get('displayName',''), 'away_full': away.get('team',{}).get('displayName',''), 'home': home.get('team',{}).get('abbreviation',''), 'away': away.get('team',{}).get('abbreviation',''), 'home_score': int(home.get('score',0) or 0), 'away_score': int(away.get('score',0) or 0), 'status': state, 'detail': detail, 'is_live': state in ['In Progress','Halftime']})
+            if len(comps) < 2:
+                continue
+            home = next((x for x in comps if x.get('homeAway') == 'home'), comps[0])
+            away = next((x for x in comps if x.get('homeAway') == 'away'), comps[1])
+            games.append({
+                "event_id": event.get('id', ''),
+                "home_full": home.get('team', {}).get('displayName', ''),
+                "away_full": away.get('team', {}).get('displayName', ''),
+                "home": home.get('team', {}).get('abbreviation', ''),
+                "away": away.get('team', {}).get('abbreviation', ''),
+                "home_score": int(home.get('score', 0) or 0),
+                "away_score": int(away.get('score', 0) or 0),
+                "status": state,
+                "detail": detail,
+                "is_live": state in ['In Progress', 'Halftime']
+            })
         live = [g for g in games if g['is_live']]
         upcoming = [g for g in games if not g['is_live']]
-        return jsonify({'games': live + upcoming[:20]})
+        return jsonify({"games": live + upcoming, "week": current_week})
     except Exception as e:
-        return jsonify({'games': [], 'error': str(e)})
+        return jsonify({"games": [], "error": str(e)})
+
+
+@app.route('/consensus_odds', methods=['GET'])
+def consensus_odds():
+    """Get consensus odds from multiple sportsbooks via The Odds API"""
+    try:
+        # NFL sport key + spreads, totals, h2h
+        url = "https://api.the-odds-api.com/v4/sports/americanfootball_nfl/odds"
+        params = {
+            "apiKey": ODDS_API_KEY,
+            "regions": "us",
+            "markets": "spreads,totals,h2h",
+            "oddsFormat": "american"
+        }
+        r = requests.get(url, params=params, timeout=15)
+        if r.status_code != 200:
+            return jsonify({"games": [], "error": f"API returned {r.status_code}"})
+        data = r.json()
+        games = []
+        for game in data:
+            home = game.get('home_team', '')
+            away = game.get('away_team', '')
+            spreads = []
+            totals = []
+            home_mls = []
+            away_mls = []
+            for book in game.get('bookmakers', []):
+                for market in book.get('markets', []):
+                    if market['key'] == 'spreads':
+                        for o in market['outcomes']:
+                            spreads.append({"team": o['name'], "point": o['point'], "price": o['price']})
+                    elif market['key'] == 'totals':
+                        for o in market['outcomes']:
+                            totals.append({"name": o['name'], "point": o['point'], "price": o['price']})
+                    elif market['key'] == 'h2h':
+                        for o in market['outcomes']:
+                            if o['name'] == home:
+                                home_mls.append(o['price'])
+                            else:
+                                away_mls.append(o['price'])
+            # Consensus spread
+            home_spread = None
+            for s in spreads:
+                if s['team'] == home:
+                    home_spread = s['point']
+                    break
+            # Consensus total
+            totals_only = [t['point'] for t in totals if t['name'] == 'Over']
+            avg_total = round(sum(totals_only) / len(totals_only), 1) if totals_only else None
+            # Market-implied win prob from moneylines
+            home_prob = None
+            if home_mls and away_mls:
+                avg_home_ml = sum(home_mls) / len(home_mls)
+                avg_away_ml = sum(away_mls) / len(away_mls)
+                def ml_to_prob(ml):
+                    return (100 / (ml + 100)) if ml > 0 else (abs(ml) / (abs(ml) + 100))
+                h = ml_to_prob(avg_home_ml)
+                a = ml_to_prob(avg_away_ml)
+                total_p = h + a
+                home_prob = round(h / total_p * 100, 1) if total_p > 0 else None
+            games.append({
+                "home": home,
+                "away": away,
+                "commence_time": game.get('commence_time', ''),
+                "consensus_spread": home_spread,
+                "consensus_total": avg_total,
+                "home_win_probability": home_prob,
+                "away_win_probability": round(100 - home_prob, 1) if home_prob else None,
+                "books_count": len(game.get('bookmakers', []))
+            })
+        return jsonify({"games": games, "count": len(games)})
+    except Exception as e:
+        return jsonify({"games": [], "error": str(e)})
+
+
+@app.route('/log_prediction', methods=['POST'])
+def log_prediction():
+    """Log a prediction for later accuracy tracking"""
+    data = request.get_json() or {}
+    history = load_prediction_history()
+    entry = {
+        "timestamp": time.time(),
+        "date": time.strftime("%Y-%m-%d %H:%M"),
+        "team1": data.get('team1'),
+        "team2": data.get('team2'),
+        "predicted_winner": data.get('predicted_winner'),
+        "predicted_score": data.get('predicted_score'),
+        "predicted_spread": data.get('predicted_spread'),
+        "predicted_total": data.get('predicted_total'),
+        "confidence": data.get('confidence'),
+        "market_spread": data.get('market_spread'),
+        "market_total": data.get('market_total'),
+        "market_home_prob": data.get('market_home_prob'),
+        "edge": data.get('edge'),
+        "actual_winner": None,
+        "actual_score": None,
+        "correct": None
+    }
+    history.append(entry)
+    return jsonify({"status": "logged", "total": len(history)})
+
+
+@app.route('/check_results', methods=['GET'])
+def check_results():
+    """Check pending predictions against final scores"""
+    history = load_prediction_history()
+    url = f"{ESPN_SITE_V2}/scoreboard?dates=2026"
+    try:
+        data = requests.get(url, timeout=10).json()
+    except:
+        return jsonify({"updated": 0})
+    final_games = {}
+    for event in data.get('events', []):
+        status = event.get('status', {}).get('type', {})
+        if not status.get('completed'):
+            continue
+        comps = event.get('competitions', [{}])[0].get('competitors', [])
+        if len(comps) < 2: continue
+        home = next((x for x in comps if x.get('homeAway') == 'home'), comps[0])
+        away = next((x for x in comps if x.get('homeAway') == 'away'), comps[1])
+        key = f"{home.get('team', {}).get('displayName', '')}|{away.get('team', {}).get('displayName', '')}"
+        hs = int(home.get('score', 0) or 0)
+        as_ = int(away.get('score', 0) or 0)
+        winner = home.get('team', {}).get('displayName') if hs > as_ else away.get('team', {}).get('displayName')
+        final_games[key] = {"winner": winner, "score": f"{hs}-{as_}"}
+    updated = 0
+    for h in history:
+        if h.get('correct') is not None: continue
+        t1 = h.get('team1', '')
+        t2 = h.get('team2', '')
+        for key, result in final_games.items():
+            if t1 in key and t2 in key:
+                h['actual_winner'] = result['winner']
+                h['actual_score'] = result['score']
+                h['correct'] = (h.get('predicted_winner') == result['winner'])
+                updated += 1
+                break
+    if updated > 0:
+        save_prediction_history(history)
+    return jsonify({"updated": updated, "total": len(history)})
+
+
+
+@app.route('/predict_with_market', methods=['GET'])
+def predict_with_market():
+    """Predict + market comparison + auto-log"""
+    team1 = request.args.get('team1')
+    team2 = request.args.get('team2')
+    if not team1 or not team2:
+        return jsonify({"error": "Invalid teams"}), 400
+    
+    # Call predict internally
+    try:
+        inner = predict_winner()
+        if hasattr(inner, 'get_json'):
+            pred = inner.get_json()
+        else:
+            import json as jlib
+            pred = jlib.loads(inner[0].get_data())
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    
+    if 'error' in pred:
+        return jsonify(pred)
+    
+    # Market comparison
+    market_spread = None
+    market_total = None
+    market_home_prob = None
+    edge = None
+    try:
+        odds_url = "https://api.the-odds-api.com/v4/sports/americanfootball_nfl/odds"
+        odds_params = {"apiKey": ODDS_API_KEY, "regions": "us", "markets": "spreads,totals,h2h", "oddsFormat": "american"}
+        odds_resp = requests.get(odds_url, params=odds_params, timeout=10)
+        if odds_resp.status_code == 200:
+            for og in odds_resp.json():
+                if og.get('home_team') == team1 and og.get('away_team') == team2:
+                    spreads_h = []
+                    totals_o = []
+                    h_mls = []
+                    a_mls = []
+                    for bk in og.get('bookmakers', []):
+                        for mk in bk.get('markets', []):
+                            if mk['key'] == 'spreads':
+                                for o in mk['outcomes']:
+                                    if o['name'] == team1: spreads_h.append(o['point'])
+                            elif mk['key'] == 'totals':
+                                for o in mk['outcomes']:
+                                    if o['name'] == 'Over': totals_o.append(o['point'])
+                            elif mk['key'] == 'h2h':
+                                for o in mk['outcomes']:
+                                    if o['name'] == team1: h_mls.append(o['price'])
+                                    else: a_mls.append(o['price'])
+                    if spreads_h: market_spread = round(sum(spreads_h) / len(spreads_h), 1)
+                    if totals_o: market_total = round(sum(totals_o) / len(totals_o), 1)
+                    if h_mls and a_mls:
+                        avg_h = sum(h_mls) / len(h_mls)
+                        avg_a = sum(a_mls) / len(a_mls)
+                        def m2p(ml): return (100/(ml+100)) if ml > 0 else (abs(ml)/(abs(ml)+100))
+                        hp = m2p(avg_h); ap = m2p(avg_a)
+                        market_home_prob = round(hp / (hp + ap) * 100, 1)
+                    if market_home_prob is not None:
+                        edge = round(pred.get('team1_win_probability', 50) - market_home_prob, 1)
+                    break
+    except:
+        pass
+    
+    pred['market_spread'] = market_spread
+    pred['market_total'] = market_total
+    pred['market_home_prob'] = market_home_prob
+    pred['edge'] = edge
+    
+    # Auto-log
+    try:
+        history = load_prediction_history()
+        history.append({
+            "timestamp": time.time(),
+            "date": time.strftime("%Y-%m-%d %H:%M"),
+            "team1": team1, "team2": team2,
+            "predicted_winner": pred.get('predicted_winner'),
+            "predicted_score": pred.get('predicted_score'),
+            "predicted_spread": pred.get('predicted_spread'),
+            "predicted_total": pred.get('predicted_total'),
+            "confidence": pred.get('confidence'),
+            "market_spread": market_spread,
+            "market_total": market_total,
+            "market_home_prob": market_home_prob,
+            "edge": edge,
+            "actual_winner": None, "actual_score": None, "correct": None
+        })
+        save_prediction_history(history)
+    except:
+        pass
+    
+    return jsonify(pred)
 
 if __name__ == "__main__":
     print("NFL API Running on http://localhost:5000")
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    app.run(host="0.0.0.0", port=5000, debug=True)
