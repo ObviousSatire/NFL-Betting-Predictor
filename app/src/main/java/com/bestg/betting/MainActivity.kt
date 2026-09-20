@@ -554,7 +554,7 @@ class MainActivity : AppCompatActivity() {
     private fun fetchPrediction(team1: String, team2: String) {
         if (team1.isEmpty() || team2.isEmpty()) return
         showLoading(true)
-        apiService.getPrediction(team1, team2).enqueue(object : Callback<PredictionResponse> {
+        apiService.getPredictionWithMarket(team1, team2).enqueue(object : Callback<PredictionResponse> {
             override fun onResponse(call: Call<PredictionResponse>, response: Response<PredictionResponse>) {
                 showLoading(false)
                 if (response.isSuccessful) {
@@ -566,6 +566,10 @@ class MainActivity : AppCompatActivity() {
                     sb.append("Score: ${p?.predicted_score}\n")
                     sb.append("Spread: ${p?.predicted_spread}\n")
                     sb.append("O/U: ${p?.predicted_total}\n\n")
+                    if (p?.market_spread != null) {
+                        sb.append("MARKET: ${p.market_spread} | O/U ${p.market_total}\n")
+                        sb.append("Edge: ${p.edge}%\n\n")
+                    }
                     sb.append("$team1: ${p?.team1_win_probability}%\n")
                     sb.append("$team2: ${p?.team2_win_probability}%\n\n")
                     sb.append("Confidence: ${p?.confidence}% (${p?.confidence_level})\n\n")

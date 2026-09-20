@@ -29,6 +29,9 @@ interface ApiService {
     @GET("player_stats")
     fun getPlayerStats(@Query("name") name: String, @Query("team") team: String): Call<PlayerStatsResponse>
 
+    @GET("predict_with_market")
+    fun getPredictionWithMarket(@Query("team1") team1: String, @Query("team2") team2: String): Call<PredictionResponse>
+
     @GET("predict")
     fun getPrediction(@Query("team1") team1: String, @Query("team2") team2: String): Call<PredictionResponse>
 
@@ -65,7 +68,7 @@ data class NewsResponse(val team: String?, val news: List<NewsItem>?)
 data class PlayerInfo(val id: String?, val name: String?, val position: String?, val jersey: String?, val team: String?, val injured: Boolean?)
 data class PlayerSeasonStats(val passing_yards: Int?, val passing_tds: Int?, val completions: Int?, val passing_attempts: Int?, val interceptions: Int?, val qb_rating: Double?, val rushing_yards: Int?, val rushing_tds: Int?, val rushing_attempts: Int?, val receiving_yards: Int?, val receiving_tds: Int?, val receptions: Int?, val targets: Int?, val tackles: Int?, val sacks: Int?, val def_interceptions: Int?)
 data class PlayerStatsResponse(val id: String?, val name: String?, val position: String?, val jersey: String?, val team: String?, val injured: Boolean?, val stats: PlayerSeasonStats?)
-data class PredictionResponse(val team1: String?, val team2: String?, val team1_win_probability: Double?, val team2_win_probability: Double?, val predicted_winner: String?, val predicted_score: String?, val predicted_spread: String?, val predicted_total: Int?, val confidence: Double?, val confidence_level: String?, val key_factors: List<String>?)
+data class PredictionResponse(val team1: String?, val team2: String?, val team1_win_probability: Double?, val team2_win_probability: Double?, val predicted_winner: String?, val predicted_score: String?, val predicted_spread: String?, val predicted_total: Int?, val market_spread: Double?, val market_total: Double?, val market_home_prob: Double?, val edge: Double?, val confidence: Double?, val confidence_level: String?, val key_factors: List<String>?)
 data class RosterResponse(val team: String?, val players: List<PlayerInfo>?)
 data class LiveScore(val away: String, val home: String, val away_score: Int, val home_score: Int, val status: String, val detail: String)
 data class LiveScoresResponse(val scores: List<LiveScore>)
