@@ -89,7 +89,11 @@ class MainActivity : AppCompatActivity() {
         findViewById<MaterialButton>(R.id.backFromGamesButton).setOnClickListener {
             gamesContainer.visibility = View.GONE
             swipeRefresh.visibility = View.VISIBLE
-            setStatsMode()
+            teamSpinner.visibility = View.VISIBLE
+            playerSpinner.visibility = View.GONE
+            resultText.visibility = View.VISIBLE
+            resultText.text = "Select a team"
+            currentMode = "STATS"
         }
 
         findViewById<MaterialButton>(R.id.testButton).setOnClickListener { testConnection() }
@@ -298,6 +302,7 @@ class MainActivity : AppCompatActivity() {
         resultText.visibility = View.VISIBLE
         teamSpinner.visibility = View.VISIBLE
         playerSpinner.visibility = View.GONE
+        resultText.text = "Select a team"
         val numberedTeams = allNFLTeams.mapIndexed { index, team -> "${index + 1}. $team" }
         val teamAdapter = ArrayAdapter(this, R.layout.spinner_item, numberedTeams)
         teamAdapter.setDropDownViewResource(R.layout.spinner_dropdown_item)
