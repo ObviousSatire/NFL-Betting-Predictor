@@ -1291,6 +1291,13 @@ def predict_with_market():
     
     return jsonify(pred)
 
+
+@app.route('/prediction_log', methods=['GET'])
+def prediction_log():
+    history = load_prediction_history()
+    recent = sorted(history, key=lambda x: x.get('timestamp', 0), reverse=True)[:50]
+    return jsonify({"log": recent, "total": len(history)})
+
 if __name__ == "__main__":
     print("NFL API Running on http://localhost:5000")
     app.run(host="0.0.0.0", port=5000, debug=True)

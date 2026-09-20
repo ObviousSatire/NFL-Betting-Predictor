@@ -155,7 +155,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showOptionsDialog() {
-        val options = mutableListOf("Change Server IP", "Toggle Favorite Team", "View Prediction Accuracy", "Live Game Predictions", "Betting Odds", "Player Props")
+        val options = mutableListOf("Change Server IP", "Toggle Favorite Team", "View Prediction Accuracy", "View Prediction Log", "Live Game Predictions", "Betting Odds", "Player Props")
         if (currentMode == "STATS") options.add("Manual Override Stats")
         AlertDialog.Builder(this)
             .setTitle("Options")
@@ -164,6 +164,7 @@ class MainActivity : AppCompatActivity() {
                     "Change Server IP" -> showServerIpDialog()
                     "Toggle Favorite Team" -> toggleFavorite()
                     "View Prediction Accuracy" -> showAccuracy()
+                    "View Prediction Log" -> showPredictionLog()
                     "Live Game Predictions" -> showLivePredictions()
                     "Betting Odds" -> showOdds()
                     "Player Props" -> showPlayerProps()
@@ -182,6 +183,44 @@ class MainActivity : AppCompatActivity() {
             Toast.makeText(this, "$currentTeam added", Toast.LENGTH_SHORT).show()
         }
         sharedPrefs.edit().putStringSet("favorite_teams", favoriteTeams).apply()
+    }
+
+    private fun showPredictionLog() {
+        resultText.text = "Loading prediction log..."
+        apiService.getPredictionLog().enqueue(object : Callback<PredictionLogResponse> {
+            override fun onResponse(call: Call<PredictionLogResponse>, response: Response<PredictionLogResponse>) {
+                val entries = response.body()?.log ?: emptyList()
+                val total = response.body()?.total ?: 0
+                if (entries.isEmpty()) {
+                    resultText.text = "No predictions logged yet\nTotal: 0\n\nEvery time you tap a game in PREDICT mode, it gets logged here."
+                    return
+                }
+                val sb = StringBuilder()
+                sb.append("PREDICTION LOG (" + total + " total)\n")
+                sb.append("==============================\n\n")
+                for (e in entries) {
+                    val resultIcon = when (e.correct) {
+                        true -> "✓ CORRECT"
+                        false -> "✗ WRONG"
+                        else -> "⏳ PENDING"
+                    }
+                    sb.append(e.date ?: "")
+                    sb.append("\n")
+                    sb.append(e.team1 ?: "?" + " vs " + (e.team2 ?: "?"))
+                    sb.append("\n")
+                    sb.append("Pick: " + (e.predicted_winner ?: "?") + " (" + (e.predicted_score ?: "?") + ")\n")
+                    sb.append("Confidence: " + (e.confidence?.toString() ?: "?") + "%\n")
+                    if (e.actual_winner != null) {
+                        sb.append("Actual: " + e.actual_winner + " " + (e.actual_score ?: "") + "\n")
+                    }
+                    sb.append(resultIcon + "\n\n")
+                }
+                resultText.text = sb.toString()
+            }
+            override fun onFailure(call: Call<PredictionLogResponse>, t: Throwable) {
+                resultText.text = "Failed to load log: " + t.message
+            }
+        })
     }
 
     private fun showAccuracy() {

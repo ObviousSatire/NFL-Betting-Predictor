@@ -44,6 +44,9 @@ interface ApiService {
     @GET("prediction_accuracy")
     fun getAccuracy(): Call<AccuracyResponse>
 
+    @GET("prediction_log")
+    fun getPredictionLog(): Call<PredictionLogResponse>
+
     @GET("live_prediction")
     fun getLivePredictions(): Call<LivePredictionResponse>
 
@@ -82,3 +85,6 @@ data class OddsResponse(val odds: List<OddsGame>)
 data class PlayerProp(val stat: String, val line: Int, val recommendation: String)
 data class PlayerPropsResponse(val player: String?, val team: String?, val props: List<PlayerProp>?)
 data class PreseasonStatsResponse(val stats: PlayerSeasonStats?)
+
+data class PredictionLogEntry(val date: String?, val team1: String?, val team2: String?, val predicted_winner: String?, val predicted_score: String?, val confidence: Double?, val actual_winner: String?, val actual_score: String?, val correct: Boolean?)
+data class PredictionLogResponse(val log: List<PredictionLogEntry>?, val total: Int?)
