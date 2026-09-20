@@ -50,6 +50,7 @@ class MainActivity : AppCompatActivity() {
     private val scoreHandler = Handler(Looper.getMainLooper())
     private lateinit var swipeRefresh: SwipeRefreshLayout
     private val favoriteTeams = mutableSetOf<String>()
+    private var currentGames: List<UpcomingGame> = emptyList()
     
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -320,22 +321,59 @@ class MainActivity : AppCompatActivity() {
     
     private fun setPredictMode() {
         currentMode = "PREDICT"
-        teamSpinner.visibility = View.VISIBLE
-        playerSpinner.visibility = View.VISIBLE
-        val numberedTeams = allNFLTeams.mapIndexed { index, team -> "${index + 1}. $team" }
-        val teamAdapter = ArrayAdapter(this, R.layout.spinner_item, numberedTeams)
-        teamAdapter.setDropDownViewResource(R.layout.spinner_dropdown_item)
-        teamSpinner.adapter = teamAdapter
-        teamSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
-            override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
-                currentTeam = allNFLTeams[position]; updateOpponentSpinner()
+        teamSpinner.visibility = View.GONE
+        playerSpinner.visibility = View.GONE
+        resultText.text = "PREDICT MODE - loading today games..."
+        apiService.getUpcomingGames().enqueue(object : Callback<UpcomingGamesResponse> {
+            override fun onResponse(call: Call<UpcomingGamesResponse>, response: Response<UpcomingGamesResponse>) {
+                val games = response.body()?.games ?: emptyList()
+                if (games.isEmpty()) {
+                    resultText.text = "No games available"
+                    return
+                }
+                val sb = StringBuilder()
+                sb.append("PICK A GAME")
+                sb.append("\n")
+                sb.append("==============================")
+                sb.append("\n\n")
+                games.forEachIndexed { i, g ->
+                    val tag = if (g.is_live) " [LIVE]" else ""
+                    sb.append((i + 1).toString() + ". " + g.away_full + " @ " + g.home_full + tag)
+                    sb.append("\n")
+                    if (g.is_live) {
+                        sb.append("   " + g.away + " " + g.away_score + " - " + g.home_score + " " + g.home + "  " + g.detail)
+                    } else {
+                        sb.append("   " + g.detail)
+                    }
+                    sb.append("\n\n")
+                }
+                resultText.text = sb.toString()
+                showGamePicker(games)
             }
-            override fun onNothingSelected(parent: AdapterView<*>?) {}
-        }
-        if (currentTeam.isEmpty()) currentTeam = allNFLTeams[0]
-        updateOpponentSpinner()
+            override fun onFailure(call: Call<UpcomingGamesResponse>, t: Throwable) {
+                resultText.text = "Failed: " + t.message
+            }
+        })
     }
-    
+
+    private fun showGamePicker(games: List<UpcomingGame>) {
+        val labels = games.take(9).map { g ->
+            val tag = if (g.is_live) " [LIVE]" else ""
+            g.away + " @ " + g.home + tag
+        }.toTypedArray()
+        AlertDialog.Builder(this)
+            .setTitle("Select Game")
+            .setItems(labels) { _, which ->
+                val g = games[which]
+                currentTeam = g.home_full
+                opponentTeam = g.away_full
+                resultText.text = "Analyzing " + g.away_full + " @ " + g.home_full + "..."
+                fetchPrediction(g.home_full, g.away_full)
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
     private fun updateOpponentSpinner() {
         val opponents = allNFLTeams.filter { it != currentTeam }
         val adapter = ArrayAdapter(this, R.layout.spinner_item, opponents.mapIndexed { i, t -> "${i+1}. $t" })

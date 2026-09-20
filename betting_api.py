@@ -997,6 +997,29 @@ def player_props():
             return jsonify(props)
     return jsonify(props)
 
+
+@app.route('/upcoming_games', methods=['GET'])
+def upcoming_games():
+    url = f"{ESPN_SITE_V2}/scoreboard?dates=2026"
+    try:
+        data = requests.get(url, timeout=10).json()
+        games = []
+        for event in data.get('events', []):
+            status = event.get('status', {}).get('type', {})
+            state = status.get('description', 'Scheduled')
+            detail = status.get('shortDetail', '')
+            comp = event.get('competitions', [{}])[0]
+            comps = comp.get('competitors', [])
+            if len(comps) < 2: continue
+            home = next((x for x in comps if x.get('homeAway')=='home'), comps[0])
+            away = next((x for x in comps if x.get('homeAway')=='away'), comps[1])
+            games.append({'event_id': event.get('id',''), 'home_full': home.get('team',{}).get('displayName',''), 'away_full': away.get('team',{}).get('displayName',''), 'home': home.get('team',{}).get('abbreviation',''), 'away': away.get('team',{}).get('abbreviation',''), 'home_score': int(home.get('score',0) or 0), 'away_score': int(away.get('score',0) or 0), 'status': state, 'detail': detail, 'is_live': state in ['In Progress','Halftime']})
+        live = [g for g in games if g['is_live']]
+        upcoming = [g for g in games if not g['is_live']]
+        return jsonify({'games': live + upcoming[:20]})
+    except Exception as e:
+        return jsonify({'games': [], 'error': str(e)})
+
 if __name__ == "__main__":
     print("NFL API Running on http://localhost:5000")
     app.run(host='0.0.0.0', port=5000, debug=True)
