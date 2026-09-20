@@ -1229,7 +1229,9 @@ def predict_with_market():
         odds_resp = requests.get(odds_url, params=odds_params, timeout=10)
         if odds_resp.status_code == 200:
             for og in odds_resp.json():
-                if og.get('home_team') == team1 and og.get('away_team') == team2:
+                oh = og.get('home_team', '')
+                oa = og.get('away_team', '')
+                if (oh == team1 and oa == team2) or (oh == team2 and oa == team1):
                     spreads_h = []
                     totals_o = []
                     h_mls = []
