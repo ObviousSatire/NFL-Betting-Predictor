@@ -17,24 +17,27 @@ import retrofit2.Callback
 import retrofit2.Response
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
-import android.util.Log
 
 class MainActivity : AppCompatActivity() {
-    
+
     private lateinit var teamSpinner: Spinner
     private lateinit var playerSpinner: Spinner
     private lateinit var resultText: TextView
     private lateinit var scoreBanner: TextView
     private lateinit var loadingIndicator: ProgressBar
+    private lateinit var swipeRefresh: SwipeRefreshLayout
+    private lateinit var gamesContainer: LinearLayout
+    private lateinit var gamesScroll: ScrollView
+    private lateinit var gamesList: LinearLayout
     private lateinit var apiService: ApiService
     private lateinit var sharedPrefs: SharedPreferences
-    
+
     private var currentMode = "STATS"
     private var currentTeam = ""
     private var currentPlayer = ""
     private var opponentTeam = ""
     private var serverIp = "10.0.0.60"
-    
+
     private val allNFLTeams = listOf(
         "Buffalo Bills", "Miami Dolphins", "New England Patriots", "New York Jets",
         "Baltimore Ravens", "Cincinnati Bengals", "Cleveland Browns", "Pittsburgh Steelers",
@@ -45,38 +48,35 @@ class MainActivity : AppCompatActivity() {
         "Atlanta Falcons", "Carolina Panthers", "New Orleans Saints", "Tampa Bay Buccaneers",
         "Arizona Cardinals", "Los Angeles Rams", "San Francisco 49ers", "Seattle Seahawks"
     )
-    
+
     private val manualStats = mutableMapOf<String, MutableMap<String, String>>()
     private val scoreHandler = Handler(Looper.getMainLooper())
-    private lateinit var swipeRefresh: SwipeRefreshLayout
-    private lateinit var gamesList: LinearLayout
     private val favoriteTeams = mutableSetOf<String>()
-    private var currentGames: List<UpcomingGame> = emptyList()
-    
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
-        
+
         sharedPrefs = getSharedPreferences("NFL_Betting_Prefs", Context.MODE_PRIVATE)
         loadManualOverrides()
         favoriteTeams.addAll(sharedPrefs.getStringSet("favorite_teams", emptySet()) ?: emptySet())
         serverIp = sharedPrefs.getString("server_ip", "10.0.0.60") ?: "10.0.0.60"
-        
+
         teamSpinner = findViewById(R.id.teamSpinner)
         playerSpinner = findViewById(R.id.playerSpinner)
         resultText = findViewById(R.id.resultText)
         scoreBanner = findViewById(R.id.scoreBanner)
         loadingIndicator = findViewById(R.id.loadingIndicator)
         swipeRefresh = findViewById(R.id.swipeRefresh)
+        gamesContainer = findViewById(R.id.gamesContainer)
+        gamesScroll = findViewById(R.id.gamesScroll)
         gamesList = findViewById(R.id.gamesList)
-        
+
         resultText.movementMethod = ScrollingMovementMethod()
         scoreBanner.isSelected = true
-        
         setupRetrofit()
-        
         playerSpinner.visibility = View.GONE
-        
+
         swipeRefresh.setOnRefreshListener {
             when (currentMode) {
                 "STATS" -> getTeamStats()
@@ -85,13 +85,18 @@ class MainActivity : AppCompatActivity() {
             }
             fetchLiveScores()
         }
-        
+
+        findViewById<MaterialButton>(R.id.backFromGamesButton).setOnClickListener {
+            gamesContainer.visibility = View.GONE
+            resultText.visibility = View.VISIBLE
+            setStatsMode()
+        }
+
         findViewById<MaterialButton>(R.id.testButton).setOnClickListener { testConnection() }
         findViewById<MaterialButton>(R.id.loadStatsButton).setOnClickListener { setStatsMode() }
         findViewById<MaterialButton>(R.id.loadPlayerButton).setOnClickListener { setPlayerMode() }
         findViewById<MaterialButton>(R.id.predictButton).setOnClickListener { setPredictMode() }
-        
-        findViewById<MaterialButton>(R.id.refreshAllButton).setOnClickListener { 
+        findViewById<MaterialButton>(R.id.refreshAllButton).setOnClickListener {
             when (currentMode) {
                 "STATS" -> getTeamStats()
                 "PLAYER" -> getPlayerStats()
@@ -99,22 +104,19 @@ class MainActivity : AppCompatActivity() {
             }
             fetchLiveScores()
         }
-        
         findViewById<MaterialButton>(R.id.clearButton).setOnClickListener { resultText.text = "" }
         findViewById<MaterialButton>(R.id.helpButton).setOnClickListener { showHelp() }
-        
         findViewById<MaterialButton>(R.id.helpButton).setOnLongClickListener {
             showOptionsDialog()
             true
         }
-        
+
         setStatsMode()
-        showUpcomingGames()
-        Handler(Looper.getMainLooper()).postDelayed({ getTeamStats() }, 3000)
+        Handler(Looper.getMainLooper()).postDelayed({ getTeamStats() }, 1000)
         fetchLiveScores()
         startScoreUpdates()
     }
-    
+
     private fun setupRetrofit() {
         val retrofit = Retrofit.Builder()
             .baseUrl("http://$serverIp:5000/")
@@ -122,7 +124,7 @@ class MainActivity : AppCompatActivity() {
             .build()
         apiService = retrofit.create(ApiService::class.java)
     }
-    
+
     private fun startScoreUpdates() {
         scoreHandler.postDelayed(object : Runnable {
             override fun run() {
@@ -131,15 +133,15 @@ class MainActivity : AppCompatActivity() {
             }
         }, 30000)
     }
-    
+
     private fun fetchLiveScores() {
         apiService.getLiveScores().enqueue(object : Callback<LiveScoresResponse> {
             override fun onResponse(call: Call<LiveScoresResponse>, response: Response<LiveScoresResponse>) {
                 if (response.isSuccessful) {
                     val scores = response.body()?.scores ?: emptyList()
                     if (scores.isNotEmpty()) {
-                        scoreBanner.text = scores.joinToString(" | ") { 
-                            "${it.away} ${it.away_score}-${it.home_score} ${it.home} (${it.detail.ifEmpty { it.status }})" 
+                        scoreBanner.text = scores.joinToString(" | ") {
+                            "${it.away} ${it.away_score}-${it.home_score} ${it.home} (${it.detail.ifEmpty { it.status }})"
                         }
                     }
                 }
@@ -147,7 +149,7 @@ class MainActivity : AppCompatActivity() {
             override fun onFailure(call: Call<LiveScoresResponse>, t: Throwable) {}
         })
     }
-    
+
     private fun showOptionsDialog() {
         val options = mutableListOf("Change Server IP", "Toggle Favorite Team", "View Prediction Accuracy", "Live Game Predictions", "Betting Odds", "Player Props")
         if (currentMode == "STATS") options.add("Manual Override Stats")
@@ -165,7 +167,7 @@ class MainActivity : AppCompatActivity() {
                 }
             }.show()
     }
-    
+
     private fun toggleFavorite() {
         if (currentTeam.isEmpty()) return
         if (favoriteTeams.contains(currentTeam)) {
@@ -177,7 +179,7 @@ class MainActivity : AppCompatActivity() {
         }
         sharedPrefs.edit().putStringSet("favorite_teams", favoriteTeams).apply()
     }
-    
+
     private fun showAccuracy() {
         apiService.getAccuracy().enqueue(object : Callback<AccuracyResponse> {
             override fun onResponse(call: Call<AccuracyResponse>, response: Response<AccuracyResponse>) {
@@ -193,7 +195,7 @@ class MainActivity : AppCompatActivity() {
             }
         })
     }
-    
+
     private fun showLivePredictions() {
         resultText.text = "Loading live predictions..."
         apiService.getLivePredictions().enqueue(object : Callback<LivePredictionResponse> {
@@ -217,7 +219,7 @@ class MainActivity : AppCompatActivity() {
             }
         })
     }
-    
+
     private fun showOdds() {
         resultText.text = "Loading odds..."
         apiService.getOdds().enqueue(object : Callback<OddsResponse> {
@@ -243,7 +245,7 @@ class MainActivity : AppCompatActivity() {
             }
         })
     }
-    
+
     private fun showPlayerProps() {
         if (currentPlayer.isEmpty() || currentTeam.isEmpty()) {
             resultText.text = "Select a player first (PLAYER mode)"
@@ -270,7 +272,7 @@ class MainActivity : AppCompatActivity() {
             }
         })
     }
-    
+
     private fun showServerIpDialog() {
         val input = EditText(this)
         input.setText(serverIp)
@@ -288,10 +290,10 @@ class MainActivity : AppCompatActivity() {
                 }
             }.setNegativeButton("Cancel", null).show()
     }
-    
+
     private fun setStatsMode() {
         currentMode = "STATS"
-        gamesList.visibility = View.GONE
+        gamesContainer.visibility = View.GONE
         resultText.visibility = View.VISIBLE
         teamSpinner.visibility = View.VISIBLE
         playerSpinner.visibility = View.GONE
@@ -306,10 +308,10 @@ class MainActivity : AppCompatActivity() {
             override fun onNothingSelected(parent: AdapterView<*>?) {}
         }
     }
-    
+
     private fun setPlayerMode() {
         currentMode = "PLAYER"
-        gamesList.visibility = View.GONE
+        gamesContainer.visibility = View.GONE
         resultText.visibility = View.VISIBLE
         teamSpinner.visibility = View.VISIBLE
         playerSpinner.visibility = View.VISIBLE
@@ -324,13 +326,13 @@ class MainActivity : AppCompatActivity() {
             override fun onNothingSelected(parent: AdapterView<*>?) {}
         }
     }
-    
+
     private fun setPredictMode() {
         currentMode = "PREDICT"
         teamSpinner.visibility = View.GONE
         playerSpinner.visibility = View.GONE
-        resultText.visibility = View.GONE
-        gamesList.visibility = View.VISIBLE
+        swipeRefresh.visibility = View.GONE
+        gamesContainer.visibility = View.VISIBLE
         gamesList.removeAllViews()
         val loadingText = TextView(this)
         loadingText.text = "Loading games..."
@@ -338,7 +340,7 @@ class MainActivity : AppCompatActivity() {
         loadingText.textSize = 14f
         loadingText.setPadding(16, 16, 16, 16)
         gamesList.addView(loadingText)
-        
+
         apiService.getUpcomingGames().enqueue(object : Callback<UpcomingGamesResponse> {
             override fun onResponse(call: Call<UpcomingGamesResponse>, response: Response<UpcomingGamesResponse>) {
                 val games = response.body()?.games ?: emptyList()
@@ -373,7 +375,8 @@ class MainActivity : AppCompatActivity() {
                     row.setOnClickListener {
                         currentTeam = g.home_full
                         opponentTeam = g.away_full
-                        gamesList.visibility = View.GONE
+                        gamesContainer.visibility = View.GONE
+                        swipeRefresh.visibility = View.VISIBLE
                         resultText.visibility = View.VISIBLE
                         resultText.text = "Analyzing ${g.away_full} @ ${g.home_full}..."
                         fetchPrediction(g.home_full, g.away_full)
@@ -391,39 +394,6 @@ class MainActivity : AppCompatActivity() {
         })
     }
 
-    private fun showGamePicker(games: List<UpcomingGame>) {
-        val labels = games.take(9).map { g ->
-            val tag = if (g.is_live) " [LIVE]" else ""
-            g.away + " @ " + g.home + tag
-        }.toTypedArray()
-        AlertDialog.Builder(this)
-            .setTitle("Select Game")
-            .setItems(labels) { _, which ->
-                val g = games[which]
-                currentTeam = g.home_full
-                opponentTeam = g.away_full
-                resultText.text = "Analyzing " + g.away_full + " @ " + g.home_full + "..."
-                fetchPrediction(g.home_full, g.away_full)
-            }
-            .setNegativeButton("Cancel", null)
-            .show()
-    }
-
-    private fun updateOpponentSpinner() {
-        val opponents = allNFLTeams.filter { it != currentTeam }
-        val adapter = ArrayAdapter(this, R.layout.spinner_item, opponents.mapIndexed { i, t -> "${i+1}. $t" })
-        adapter.setDropDownViewResource(R.layout.spinner_dropdown_item)
-        playerSpinner.adapter = adapter
-        playerSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
-            override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
-                if (position >= 0 && position < opponents.size) {
-                    opponentTeam = opponents[position]; fetchPrediction(currentTeam, opponentTeam)
-                }
-            }
-            override fun onNothingSelected(parent: AdapterView<*>?) {}
-        }
-    }
-    
     private fun loadRosterForTeam(teamName: String) {
         showLoading(true)
         apiService.getRoster(teamName).enqueue(object : Callback<RosterResponse> {
@@ -432,7 +402,7 @@ class MainActivity : AppCompatActivity() {
                 if (response.isSuccessful) {
                     val players = response.body()?.players ?: emptyList()
                     if (players.isEmpty()) { resultText.text = "No players found"; return }
-                    val playerNames = players.mapIndexed { index, player -> 
+                    val playerNames = players.mapIndexed { index, player ->
                         "${index + 1}. ${player.name} (${player.position})${if (player.injured == true) " [INJ]" else ""}"
                     }
                     val adapter = ArrayAdapter(this@MainActivity, R.layout.spinner_item, playerNames)
@@ -452,7 +422,7 @@ class MainActivity : AppCompatActivity() {
             override fun onFailure(call: Call<RosterResponse>, t: Throwable) { showLoading(false) }
         })
     }
-    
+
     private fun getTeamStats() {
         val team = currentTeam; if (team.isEmpty()) return
         showLoading(true)
@@ -490,8 +460,8 @@ class MainActivity : AppCompatActivity() {
             override fun onFailure(call: Call<TeamStatsResponse>, t: Throwable) { showLoading(false) }
         })
     }
-    
-    private fun displayFullStats(team: String, stats: TeamStatsResponse?, wl: WinLossResponse?, 
+
+    private fun displayFullStats(team: String, stats: TeamStatsResponse?, wl: WinLossResponse?,
                                   weather: WeatherResponse?, injuries: InjuriesResponse?, news: NewsResponse?) {
         val sb = StringBuilder()
         sb.append("$team\n==============================\n\n[ TEAM STATS ]\n")
@@ -504,25 +474,27 @@ class MainActivity : AppCompatActivity() {
         sb.append("\n[ WEATHER ]\n")
         if (weather != null) sb.append("${weather.temperature ?: "--"}F, ${weather.conditions ?: "N/A"}\n${weather.impact ?: ""}\n")
         sb.append("\n[ INJURIES ]\n")
-        if (injuries?.injuries != null && injuries.injuries!!.isNotEmpty()) {
-            for (i in 0 until minOf(injuries.injuries!!.size, 3)) {
-                val item = injuries.injuries!![i]
-                sb.append("- ${item.player}: ${item.status}\n")
+        if (injuries?.injuries != null && injuries.injuries.isNotEmpty()) {
+            val items = injuries.injuries
+            for (i in 0 until minOf(items.size, 5)) {
+                val item = items[i]
+                sb.append("- ${item.player ?: "Unknown"} (${item.position ?: "N/A"}): ${item.status ?: "N/A"}\n")
             }
         } else sb.append("None reported\n")
         sb.append("\n[ NEWS ]\n")
-        if (news?.news != null && news.news!!.isNotEmpty()) {
-            for (i in 0 until minOf(news.news!!.size, 3)) {
-                sb.append("${i+1}. ${news.news!![i].headline}\n")
+        if (news?.news != null && news.news.isNotEmpty()) {
+            val items = news.news
+            for (i in 0 until minOf(items.size, 3)) {
+                sb.append("${i+1}. ${items[i].headline ?: ""}\n")
             }
         } else sb.append("No recent news\n")
         resultText.text = sb.toString()
     }
-    
+
     private fun displayManualStats(team: String, manual: MutableMap<String, String>) {
         resultText.text = "$team (MANUAL)\nRecord: ${manual["record"] ?: "N/A"}\nPF: ${manual["points_for"] ?: 0}  PA: ${manual["points_against"] ?: 0}"
     }
-    
+
     private fun getPlayerStats() {
         if (currentPlayer.isEmpty()) return
         showLoading(true)
@@ -534,23 +506,41 @@ class MainActivity : AppCompatActivity() {
             override fun onFailure(call: Call<PlayerStatsResponse>, t: Throwable) { showLoading(false) }
         })
     }
-    
+
     private fun displayPlayerStats(p: PlayerStatsResponse?) {
         if (p == null) return
         val sb = StringBuilder()
-        sb.append("${p.name}\nPosition: ${p.position} | #${p.jersey}\nTeam: ${p.team}\n")
-        if (p.stats == null) {
-            // Don't fetch preseason here - let getPlayerStats handle it
+        sb.append("${p.name}\n")
+        sb.append("Position: ${p.position ?: "N/A"} | #${p.jersey ?: "N/A"}\n")
+        sb.append("Team: ${p.team ?: currentTeam}\n")
+        sb.append("Status: ${if (p.injured == true) "INJURED" else "Active"}\n")
+        val s = p.stats
+        if (s == null) {
+            sb.append("\nNo season stats available")
             resultText.text = sb.toString()
             return
         }
-        val s = p.stats
-        if (s!!.passing_yards != null) sb.append("\n[PASSING] Yards: ${s.passing_yards} TDs: ${s.passing_tds} INTs: ${s.interceptions}")
-        if (s.rushing_yards != null) sb.append("\n[RUSHING] Yards: ${s.rushing_yards} TDs: ${s.rushing_tds}")
-        if (s.receiving_yards != null) sb.append("\n[RECEIVING] Yards: ${s.receiving_yards} TDs: ${s.receiving_tds} Rec: ${s.receptions}")
+        if (s.passing_yards != null) {
+            sb.append("\n[ PASSING ]\n")
+            sb.append("Yards: ${s.passing_yards}\n")
+            if (s.passing_tds != null) sb.append("TDs: ${s.passing_tds}\n")
+            if (s.completions != null && s.passing_attempts != null) sb.append("Comp: ${s.completions}/${s.passing_attempts}\n")
+            if (s.interceptions != null) sb.append("INTs: ${s.interceptions}\n")
+        }
+        if (s.rushing_yards != null) {
+            sb.append("\n[ RUSHING ]\n")
+            sb.append("Yards: ${s.rushing_yards}\n")
+            if (s.rushing_tds != null) sb.append("TDs: ${s.rushing_tds}\n")
+        }
+        if (s.receiving_yards != null) {
+            sb.append("\n[ RECEIVING ]\n")
+            sb.append("Yards: ${s.receiving_yards}\n")
+            if (s.receiving_tds != null) sb.append("TDs: ${s.receiving_tds}\n")
+            if (s.receptions != null) sb.append("Rec: ${s.receptions}\n")
+        }
         resultText.text = sb.toString()
     }
-    
+
     private fun fetchPrediction(team1: String, team2: String) {
         if (team1.isEmpty() || team2.isEmpty()) return
         showLoading(true)
@@ -560,18 +550,20 @@ class MainActivity : AppCompatActivity() {
                 if (response.isSuccessful) {
                     val p = response.body()
                     val sb = StringBuilder()
-                    sb.append("PREDICTION: $team1 vs $team2\n")
-                    sb.append("==============================\n\n")
-                    sb.append("WINNER: ${p?.predicted_winner}\n")
-                    sb.append("Score: ${p?.predicted_score}\n")
-                    sb.append("Spread: ${p?.predicted_spread}\n")
-                    sb.append("O/U: ${p?.predicted_total}\n\n")
-                    if (p?.market_spread != null) {
-                        sb.append("MARKET: ${p.market_spread} | O/U ${p.market_total}\n")
-                        sb.append("Edge: ${p.edge}%\n\n")
-                    }
+                    sb.append("PREDICTION\n==============================\n\n")
+                    sb.append("${p?.predicted_winner ?: "N/A"} WINS\n\n")
+                    sb.append("Predicted Score: ${p?.predicted_score ?: "N/A"}\n")
+                    sb.append("Predicted Spread: ${p?.predicted_spread ?: "N/A"}\n")
+                    sb.append("Predicted Total: ${p?.predicted_total ?: "N/A"}\n\n")
                     sb.append("$team1: ${p?.team1_win_probability}%\n")
                     sb.append("$team2: ${p?.team2_win_probability}%\n\n")
+                    if (p?.market_spread != null) {
+                        sb.append("MARKET CONSENSUS\n")
+                        sb.append("Spread: ${p.market_spread}\n")
+                        sb.append("Total: ${p.market_total}\n")
+                        sb.append("Home Win: ${p.market_home_prob}%\n")
+                        sb.append("Edge: ${p.edge}%\n\n")
+                    }
                     sb.append("Confidence: ${p?.confidence}% (${p?.confidence_level})\n\n")
                     sb.append("KEY FACTORS:\n")
                     p?.key_factors?.forEach { sb.append("- $it\n") }
@@ -581,19 +573,19 @@ class MainActivity : AppCompatActivity() {
             override fun onFailure(call: Call<PredictionResponse>, t: Throwable) { showLoading(false) }
         })
     }
-    
+
     private fun loadManualOverrides() {
         sharedPrefs.getStringSet("manual_overrides", emptySet())?.forEach { entry ->
             val parts = entry.split("|")
             if (parts.size == 3) manualStats.getOrPut(parts[0]) { mutableMapOf() }[parts[1]] = parts[2]
         }
     }
-    
+
     private fun saveManualOverride(team: String, statName: String, value: String) {
         manualStats.getOrPut(team) { mutableMapOf() }[statName] = value
         sharedPrefs.edit().putStringSet("manual_overrides", manualStats.flatMap { (t, s) -> s.map { "$t|${it.key}|${it.value}" } }.toSet()).apply()
     }
-    
+
     private fun showManualOverrideDialog() {
         val team = currentTeam
         AlertDialog.Builder(this).setTitle("Manual Override - $team")
@@ -606,35 +598,13 @@ class MainActivity : AppCompatActivity() {
                 }
             }.show()
     }
-    
+
     private fun showStatEditDialog(team: String, statKey: String) {
         val input = EditText(this)
         input.setText(manualStats[team]?.get(statKey) ?: "")
         AlertDialog.Builder(this).setTitle("Edit $statKey").setView(input)
             .setPositiveButton("Save") { _, _ -> saveManualOverride(team, statKey, input.text.toString()); getTeamStats() }
             .setNegativeButton("Cancel", null).show()
-    }
-    
-    private fun fetchPreseasonStats(name: String, team: String) {
-        apiService.getPreseasonStats(team, name).enqueue(object : Callback<PreseasonStatsResponse> {
-            override fun onResponse(call: Call<PreseasonStatsResponse>, response: Response<PreseasonStatsResponse>) {
-                if (response.isSuccessful && response.body()?.stats != null) {
-                    val s = response.body()!!.stats!!
-                    val sb = StringBuilder()
-                    sb.append("$name\nPosition: N/A\nTeam: $team\n")
-                    sb.append("\n[ PRESEASON STATS ]")
-                    if (s.passing_yards != null) sb.append("\nPassing: ${s.passing_yards} yds, ${s.passing_tds ?: 0} TD")
-                    if (s.rushing_yards != null) sb.append("\nRushing: ${s.rushing_yards} yds, ${s.rushing_tds ?: 0} TD")
-                    if (s.receiving_yards != null) sb.append("\nReceiving: ${s.receiving_yards} yds, ${s.receiving_tds ?: 0} TD")
-                    resultText.text = sb.toString()
-                } else {
-                    resultText.text = "No season stats available"
-                }
-            }
-            override fun onFailure(call: Call<PreseasonStatsResponse>, t: Throwable) {
-                resultText.text = "No season stats available"
-            }
-        })
     }
 
     private fun testConnection() {
@@ -647,34 +617,13 @@ class MainActivity : AppCompatActivity() {
             override fun onFailure(call: Call<TestResponse>, t: Throwable) { showLoading(false); resultText.text = "Cannot reach $serverIp:5000" }
         })
     }
-    
-    private fun showUpcomingGames() {
-        apiService.getLiveScores().enqueue(object : Callback<LiveScoresResponse> {
-            override fun onResponse(call: Call<LiveScoresResponse>, response: Response<LiveScoresResponse>) {
-                if (response.isSuccessful) {
-                    val scores = response.body()?.scores ?: emptyList()
-                    if (scores.isNotEmpty()) {
-                        val sb = StringBuilder()
-                        sb.append("UPCOMING / LIVE GAMES\n")
-                        sb.append("==============================\n\n")
-                        for (s in scores) {
-                            sb.append("${s.away} @ ${s.home}\n")
-                            sb.append("  ${s.detail}\n\n")
-                        }
-                        resultText.text = sb.toString()
-                    }
-                }
-            }
-            override fun onFailure(call: Call<LiveScoresResponse>, t: Throwable) {}
-        })
-    }
 
     private fun showHelp() {
-        resultText.text = "HELP - $serverIp:5000\n\nSTATS: Team info\nPLAYER: Player stats\nPREDICT: Win prediction\nLong press HELP for settings"
+        resultText.text = "HELP - $serverIp:5000\n\nSTATS: Team info\nPLAYER: Player stats\nPREDICT: Tap a game to predict\n\nLong press HELP for:\n- Change Server IP\n- Toggle Favorites\n- View Accuracy\n- Live Predictions\n- Betting Odds\n- Player Props\n- Manual Override"
     }
-    
+
     private fun showLoading(show: Boolean) {
         loadingIndicator.visibility = if (show) View.VISIBLE else View.GONE
-        if (!show && ::swipeRefresh.isInitialized) swipeRefresh.isRefreshing = false
+        if (!show) swipeRefresh.isRefreshing = false
     }
 }

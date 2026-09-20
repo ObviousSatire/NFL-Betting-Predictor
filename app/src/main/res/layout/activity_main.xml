@@ -49,13 +49,6 @@
             android:layout_marginStart="8dp" />
     </LinearLayout>
 
-    <LinearLayout
-        android:id="@+id/gamesList"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="vertical"
-        android:visibility="gone" />
-
     <ProgressBar
         android:id="@+id/loadingIndicator"
         android:layout_width="30dp"
@@ -88,6 +81,38 @@
                 android:lineSpacingExtra="2dp" />
         </ScrollView>
     </androidx.swiperefreshlayout.widget.SwipeRefreshLayout>
+
+    <LinearLayout
+        android:id="@+id/gamesContainer"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:orientation="vertical"
+        android:layout_marginTop="4dp"
+        android:visibility="gone">
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/backFromGamesButton"
+            android:layout_width="match_parent"
+            android:layout_height="48dp"
+            android:text="BACK TO TEAMS"
+            android:textSize="13sp"
+            android:backgroundTint="#e94560" />
+
+        <ScrollView
+            android:id="@+id/gamesScroll"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:layout_marginTop="6dp">
+
+            <LinearLayout
+                android:id="@+id/gamesList"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical" />
+        </ScrollView>
+    </LinearLayout>
 
     <LinearLayout
         android:layout_width="match_parent"

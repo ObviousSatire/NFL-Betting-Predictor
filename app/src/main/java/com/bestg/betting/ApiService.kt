@@ -29,11 +29,11 @@ interface ApiService {
     @GET("player_stats")
     fun getPlayerStats(@Query("name") name: String, @Query("team") team: String): Call<PlayerStatsResponse>
 
-    @GET("predict_with_market")
-    fun getPredictionWithMarket(@Query("team1") team1: String, @Query("team2") team2: String): Call<PredictionResponse>
-
     @GET("predict")
     fun getPrediction(@Query("team1") team1: String, @Query("team2") team2: String): Call<PredictionResponse>
+
+    @GET("predict_with_market")
+    fun getPredictionWithMarket(@Query("team1") team1: String, @Query("team2") team2: String): Call<PredictionResponse>
 
     @GET("live_scores")
     fun getLiveScores(): Call<LiveScoresResponse>
@@ -72,6 +72,8 @@ data class PredictionResponse(val team1: String?, val team2: String?, val team1_
 data class RosterResponse(val team: String?, val players: List<PlayerInfo>?)
 data class LiveScore(val away: String, val home: String, val away_score: Int, val home_score: Int, val status: String, val detail: String)
 data class LiveScoresResponse(val scores: List<LiveScore>)
+data class UpcomingGame(val event_id: String, val home_full: String, val away_full: String, val home: String, val away: String, val home_score: Int, val away_score: Int, val status: String, val detail: String, val is_live: Boolean)
+data class UpcomingGamesResponse(val games: List<UpcomingGame>)
 data class AccuracyResponse(val total_predictions: Int?, val correct: Int?, val accuracy: Double?)
 data class LivePrediction(val home: String, val away: String, val home_score: Int, val away_score: Int, val clock: String, val home_win_probability: Double, val away_win_probability: Double)
 data class LivePredictionResponse(val live: List<LivePrediction>)
@@ -80,18 +82,3 @@ data class OddsResponse(val odds: List<OddsGame>)
 data class PlayerProp(val stat: String, val line: Int, val recommendation: String)
 data class PlayerPropsResponse(val player: String?, val team: String?, val props: List<PlayerProp>?)
 data class PreseasonStatsResponse(val stats: PlayerSeasonStats?)
-
-data class UpcomingGame(
-    val event_id: String,
-    val home_full: String,
-    val away_full: String,
-    val home: String,
-    val away: String,
-    val home_score: Int,
-    val away_score: Int,
-    val status: String,
-    val detail: String,
-    val is_live: Boolean
-)
-
-data class UpcomingGamesResponse(val games: List<UpcomingGame>)
