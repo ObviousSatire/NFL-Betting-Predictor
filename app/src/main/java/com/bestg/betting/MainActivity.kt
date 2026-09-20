@@ -88,7 +88,7 @@ class MainActivity : AppCompatActivity() {
 
         findViewById<MaterialButton>(R.id.backFromGamesButton).setOnClickListener {
             gamesContainer.visibility = View.GONE
-            resultText.visibility = View.VISIBLE
+            swipeRefresh.visibility = View.VISIBLE
             setStatsMode()
         }
 
@@ -294,6 +294,7 @@ class MainActivity : AppCompatActivity() {
     private fun setStatsMode() {
         currentMode = "STATS"
         gamesContainer.visibility = View.GONE
+        swipeRefresh.visibility = View.VISIBLE
         resultText.visibility = View.VISIBLE
         teamSpinner.visibility = View.VISIBLE
         playerSpinner.visibility = View.GONE
@@ -312,6 +313,7 @@ class MainActivity : AppCompatActivity() {
     private fun setPlayerMode() {
         currentMode = "PLAYER"
         gamesContainer.visibility = View.GONE
+        swipeRefresh.visibility = View.VISIBLE
         resultText.visibility = View.VISIBLE
         teamSpinner.visibility = View.VISIBLE
         playerSpinner.visibility = View.VISIBLE
