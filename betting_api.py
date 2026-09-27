@@ -1017,16 +1017,16 @@ def player_props():
 
 @app.route('/upcoming_games', methods=['GET'])
 def upcoming_games():
-    url = f"{ESPN_SITE_V2}/scoreboard?dates=2026"
+    url = f"{ESPN_SITE_V2}/scoreboard"
     try:
         data = requests.get(url, timeout=10).json()
-        # Get current week from API
         current_week = data.get('week', {}).get('number', 1)
         games = []
         for event in data.get('events', []):
             status = event.get('status', {}).get('type', {})
             state = status.get('description', 'Scheduled')
             detail = status.get('shortDetail', '')
+            completed = status.get('completed', False)
             week_num = event.get('week', {}).get('number', 0)
             if week_num != current_week:
                 continue
@@ -1036,24 +1036,35 @@ def upcoming_games():
                 continue
             home = next((x for x in comps if x.get('homeAway') == 'home'), comps[0])
             away = next((x for x in comps if x.get('homeAway') == 'away'), comps[1])
+            hs = int(home.get('score', 0) or 0)
+            as_ = int(away.get('score', 0) or 0)
+            # Build display string
+            if completed:
+                display = f"{away.get('team', {}).get('abbreviation', '')} {as_} - {hs} {home.get('team', {}).get('abbreviation', '')} (FINAL)"
+            elif state in ['In Progress', 'Halftime']:
+                display = f"{away.get('team', {}).get('abbreviation', '')} {as_} - {hs} {home.get('team', {}).get('abbreviation', '')} ({detail})"
+            else:
+                display = detail
             games.append({
                 "event_id": event.get('id', ''),
                 "home_full": home.get('team', {}).get('displayName', ''),
                 "away_full": away.get('team', {}).get('displayName', ''),
                 "home": home.get('team', {}).get('abbreviation', ''),
                 "away": away.get('team', {}).get('abbreviation', ''),
-                "home_score": int(home.get('score', 0) or 0),
-                "away_score": int(away.get('score', 0) or 0),
+                "home_score": hs,
+                "away_score": as_,
                 "status": state,
-                "detail": detail,
-                "is_live": state in ['In Progress', 'Halftime']
+                "detail": display,
+                "is_live": state in ['In Progress', 'Halftime'],
+                "completed": completed
             })
+        # Sort: live first, then scheduled, then final
         live = [g for g in games if g['is_live']]
-        upcoming = [g for g in games if not g['is_live']]
-        return jsonify({"games": live + upcoming, "week": current_week})
+        scheduled = [g for g in games if not g['is_live'] and not g['completed']]
+        final = [g for g in games if g['completed']]
+        return jsonify({"games": live + scheduled + final, "week": current_week})
     except Exception as e:
         return jsonify({"games": [], "error": str(e)})
-
 
 @app.route('/consensus_odds', methods=['GET'])
 def consensus_odds():

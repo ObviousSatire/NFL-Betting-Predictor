@@ -393,8 +393,7 @@ class MainActivity : AppCompatActivity() {
                 for (g in games) {
                     val row = TextView(this@MainActivity)
                     val tag = if (g.is_live) " [LIVE]" else ""
-                    val score = if (g.is_live) "  ${g.away} ${g.away_score} - ${g.home_score} ${g.home}" else ""
-                    row.text = "${g.away_full} @ ${g.home_full}$tag$score\n${g.detail}"
+                    row.text = "${g.away_full} @ ${g.home_full}$tag\n${g.detail}"
                     row.setTextColor(0xFFFFD700.toInt())
                     row.textSize = 15f
                     row.setPadding(16, 16, 16, 16)
