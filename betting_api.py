@@ -1038,31 +1038,45 @@ def upcoming_games():
             away = next((x for x in comps if x.get('homeAway') == 'away'), comps[1])
             hs = int(home.get('score', 0) or 0)
             as_ = int(away.get('score', 0) or 0)
-            # Build display string
-            if completed:
-                display = f"{away.get('team', {}).get('abbreviation', '')} {as_} - {hs} {home.get('team', {}).get('abbreviation', '')} (FINAL)"
-            elif state in ['In Progress', 'Halftime']:
-                display = f"{away.get('team', {}).get('abbreviation', '')} {as_} - {hs} {home.get('team', {}).get('abbreviation', '')} ({detail})"
+            game_date = event.get('date', '')
+            home_abbr = home.get('team', {}).get('abbreviation', '')
+            away_abbr = away.get('team', {}).get('abbreviation', '')
+            home_name = home.get('team', {}).get('displayName', '')
+            away_name = away.get('team', {}).get('displayName', '')
+            home_winner = home.get('winner', False)
+            away_winner = away.get('winner', False)
+            
+            # Time display
+            if state in ['In Progress', 'Halftime']:
+                status_text = detail
+                state_type = "LIVE"
+            elif completed:
+                status_text = "FINAL"
+                state_type = "FINAL"
             else:
-                display = detail
+                status_text = detail
+                state_type = "SCHEDULED"
+            
             games.append({
                 "event_id": event.get('id', ''),
-                "home_full": home.get('team', {}).get('displayName', ''),
-                "away_full": away.get('team', {}).get('displayName', ''),
-                "home": home.get('team', {}).get('abbreviation', ''),
-                "away": away.get('team', {}).get('abbreviation', ''),
+                "home": home_abbr,
+                "away": away_abbr,
+                "home_full": home_name,
+                "away_full": away_name,
                 "home_score": hs,
                 "away_score": as_,
-                "status": state,
-                "detail": display,
+                "home_winner": home_winner,
+                "away_winner": away_winner,
+                "date": game_date,
+                "status_text": status_text,
+                "state_type": state_type,
                 "is_live": state in ['In Progress', 'Halftime'],
                 "completed": completed
             })
-        # Sort: live first, then scheduled, then final
-        live = [g for g in games if g['is_live']]
-        scheduled = [g for g in games if not g['is_live'] and not g['completed']]
-        final = [g for g in games if g['completed']]
-        return jsonify({"games": live + scheduled + final, "week": current_week})
+        
+        # Sort by date ascending (Thursday first, Monday last)
+        games.sort(key=lambda x: x.get('date', ''))
+        return jsonify({"games": games, "week": current_week})
     except Exception as e:
         return jsonify({"games": [], "error": str(e)})
 

@@ -371,44 +371,120 @@ class MainActivity : AppCompatActivity() {
         swipeRefresh.visibility = View.GONE
         gamesContainer.visibility = View.VISIBLE
         gamesList.removeAllViews()
+        
         val loadingText = TextView(this)
-        loadingText.text = "Loading games..."
-        loadingText.setTextColor(0xFFE0E0E0.toInt())
+        loadingText.text = "Loading this week..."
+        loadingText.setTextColor(0xFF8899aa.toInt())
         loadingText.textSize = 14f
-        loadingText.setPadding(16, 16, 16, 16)
+        loadingText.setPadding(24, 24, 24, 24)
         gamesList.addView(loadingText)
 
         apiService.getUpcomingGames().enqueue(object : Callback<UpcomingGamesResponse> {
             override fun onResponse(call: Call<UpcomingGamesResponse>, response: Response<UpcomingGamesResponse>) {
                 val games = response.body()?.games ?: emptyList()
+                val week = response.body()?.week ?: 1
                 gamesList.removeAllViews()
                 if (games.isEmpty()) {
                     val tv = TextView(this@MainActivity)
                     tv.text = "No games this week"
-                    tv.setTextColor(0xFFE0E0E0.toInt())
-                    tv.setPadding(16, 16, 16, 16)
+                    tv.setTextColor(0xFF8899aa.toInt())
+                    tv.setPadding(24, 24, 24, 24)
                     gamesList.addView(tv)
                     return
                 }
+                
+                // Week header
+                val weekHeader = TextView(this@MainActivity)
+                weekHeader.text = "WEEK $week"
+                weekHeader.setTextColor(0xFFFFFFFF.toInt())
+                weekHeader.textSize = 22f
+                weekHeader.setTypeface(null, android.graphics.Typeface.BOLD)
+                weekHeader.setPadding(16, 16, 16, 16)
+                gamesList.addView(weekHeader)
+                
+                var lastDay = ""
                 for (g in games) {
-                    val row = TextView(this@MainActivity)
-                    val tag = if (g.is_live) " [LIVE]" else ""
-                    row.text = "${g.away_full} @ ${g.home_full}$tag\n${g.detail}"
-                    row.setTextColor(0xFFFFD700.toInt())
-                    row.textSize = 15f
-                    row.setPadding(16, 16, 16, 16)
+                    // Determine day group from date
+                    var dayLabel = ""
+                    try {
+                        val datePart = (g.date ?: "").substring(0, 10)
+                        val sdf = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US)
+                        val date = sdf.parse(datePart)
+                        val dayOfWeek = java.text.SimpleDateFormat("EEEE, MMM d", java.util.Locale.US)
+                        dayLabel = dayOfWeek.format(date)
+                    } catch (e: Exception) {
+                        dayLabel = ""
+                    }
+                    
+                    // Add day header if it changed
+                    if (dayLabel.isNotEmpty() && dayLabel != lastDay) {
+                        val dayHeader = TextView(this@MainActivity)
+                        dayHeader.text = dayLabel
+                        dayHeader.setTextColor(0xFF4a9eff.toInt())
+                        dayHeader.textSize = 14f
+                        dayHeader.setTypeface(null, android.graphics.Typeface.BOLD)
+                        dayHeader.setPadding(16, 24, 16, 8)
+                        gamesList.addView(dayHeader)
+                        lastDay = dayLabel
+                    }
+                    
+                    // Create card
+                    val card = LinearLayout(this@MainActivity)
+                    card.orientation = LinearLayout.VERTICAL
                     val bg = android.graphics.drawable.GradientDrawable()
-                    bg.setColor(0xFF0F3460.toInt())
-                    bg.cornerRadius = 8f
-                    row.background = bg
-                    val lp = LinearLayout.LayoutParams(
+                    if (g.is_live == true) {
+                        bg.setColor(0xFF1a2f4a.toInt())
+                        bg.setStroke(3, 0xFFff4444.toInt())
+                    } else if (g.completed == true) {
+                        bg.setColor(0xFF141824.toInt())
+                    } else {
+                        bg.setColor(0xFF1e2740.toInt())
+                    }
+                    bg.cornerRadius = 12f
+                    card.background = bg
+                    card.setPadding(20, 16, 20, 16)
+                    val cardLp = LinearLayout.LayoutParams(
                         LinearLayout.LayoutParams.MATCH_PARENT,
                         LinearLayout.LayoutParams.WRAP_CONTENT
                     )
-                    lp.setMargins(0, 0, 0, 12)
-                    row.layoutParams = lp
-                    row.isClickable = true
-                    row.setOnClickListener {
+                    cardLp.setMargins(12, 6, 12, 6)
+                    card.layoutParams = cardLp
+                    card.isClickable = true
+                    
+                    // Status row
+                    val statusRow = TextView(this@MainActivity)
+                    val statusColor = when (g.state_type) {
+                        "LIVE" -> 0xFFff4444.toInt()
+                        "FINAL" -> 0xFF8899aa.toInt()
+                        else -> 0xFF4a9eff.toInt()
+                    }
+                    statusRow.text = g.status_text
+                    statusRow.setTextColor(statusColor)
+                    statusRow.textSize = 11f
+                    statusRow.setTypeface(null, android.graphics.Typeface.BOLD)
+                    card.addView(statusRow)
+                    
+                    // Away team row
+                    val awayRow = TextView(this@MainActivity)
+                    val awayColor = if (g.away_winner == true) 0xFF00ff88.toInt() else 0xFFdde4f0.toInt()
+                    awayRow.text = "${g.away_full}    ${if (g.completed == true || g.is_live == true) g.away_score.toString() else ""}"
+                    awayRow.setTextColor(awayColor)
+                    awayRow.textSize = 17f
+                    awayRow.setPadding(0, 8, 0, 0)
+                    if (g.away_winner == true) awayRow.setTypeface(null, android.graphics.Typeface.BOLD)
+                    card.addView(awayRow)
+                    
+                    // Home team row
+                    val homeRow = TextView(this@MainActivity)
+                    val homeColor = if (g.home_winner == true) 0xFF00ff88.toInt() else 0xFFdde4f0.toInt()
+                    homeRow.text = "${g.home_full}    ${if (g.completed == true || g.is_live == true) g.home_score.toString() else ""}"
+                    homeRow.setTextColor(homeColor)
+                    homeRow.textSize = 17f
+                    homeRow.setPadding(0, 4, 0, 0)
+                    if (g.home_winner == true) homeRow.setTypeface(null, android.graphics.Typeface.BOLD)
+                    card.addView(homeRow)
+                    
+                    card.setOnClickListener {
                         currentTeam = g.home_full
                         opponentTeam = g.away_full
                         gamesContainer.visibility = View.GONE
@@ -417,14 +493,15 @@ class MainActivity : AppCompatActivity() {
                         resultText.text = "Analyzing ${g.away_full} @ ${g.home_full}..."
                         fetchPrediction(g.home_full, g.away_full)
                     }
-                    gamesList.addView(row)
+                    gamesList.addView(card)
                 }
             }
             override fun onFailure(call: Call<UpcomingGamesResponse>, t: Throwable) {
                 gamesList.removeAllViews()
                 val tv = TextView(this@MainActivity)
                 tv.text = "Failed: ${t.message}"
-                tv.setTextColor(0xFFE0E0E0.toInt())
+                tv.setTextColor(0xFFff4444.toInt())
+                tv.setPadding(24, 24, 24, 24)
                 gamesList.addView(tv)
             }
         })
