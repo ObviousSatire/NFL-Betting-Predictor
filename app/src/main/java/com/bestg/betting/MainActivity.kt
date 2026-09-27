@@ -20,6 +20,7 @@ import retrofit2.converter.gson.GsonConverterFactory
 
 class MainActivity : AppCompatActivity() {
 
+    private lateinit var spinnersRow: LinearLayout
     private lateinit var teamSpinner: Spinner
     private lateinit var playerSpinner: Spinner
     private lateinit var resultText: TextView
@@ -62,6 +63,7 @@ class MainActivity : AppCompatActivity() {
         favoriteTeams.addAll(sharedPrefs.getStringSet("favorite_teams", emptySet()) ?: emptySet())
         serverIp = sharedPrefs.getString("server_ip", "10.0.0.60") ?: "10.0.0.60"
 
+        spinnersRow = findViewById(R.id.spinnersRow)
         teamSpinner = findViewById(R.id.teamSpinner)
         playerSpinner = findViewById(R.id.playerSpinner)
         resultText = findViewById(R.id.resultText)
@@ -86,15 +88,7 @@ class MainActivity : AppCompatActivity() {
             fetchLiveScores()
         }
 
-        findViewById<MaterialButton>(R.id.backFromGamesButton).setOnClickListener {
-            gamesContainer.visibility = View.GONE
-            swipeRefresh.visibility = View.VISIBLE
-            teamSpinner.visibility = View.VISIBLE
-            playerSpinner.visibility = View.GONE
-            resultText.visibility = View.VISIBLE
-            resultText.text = "Select a team"
-            currentMode = "STATS"
-        }
+
 
         findViewById<MaterialButton>(R.id.testButton).setOnClickListener { testConnection() }
         findViewById<MaterialButton>(R.id.loadStatsButton).setOnClickListener { setStatsMode() }
@@ -115,8 +109,7 @@ class MainActivity : AppCompatActivity() {
             true
         }
 
-        setStatsMode()
-        Handler(Looper.getMainLooper()).postDelayed({ getTeamStats() }, 1000)
+        setPredictMode()
         fetchLiveScores()
         startScoreUpdates()
     }
@@ -336,11 +329,10 @@ class MainActivity : AppCompatActivity() {
 
     private fun setStatsMode() {
         currentMode = "STATS"
-        gamesContainer.visibility = View.GONE
+        gamesContainer.visibility = View.VISIBLE
         swipeRefresh.visibility = View.VISIBLE
         resultText.visibility = View.VISIBLE
-        teamSpinner.visibility = View.VISIBLE
-        playerSpinner.visibility = View.GONE
+        spinnersRow.visibility = View.GONE
         resultText.text = "Select a team"
         val numberedTeams = allNFLTeams.mapIndexed { index, team -> "${index + 1}. $team" }
         val teamAdapter = ArrayAdapter(this, R.layout.spinner_item, numberedTeams)
@@ -359,7 +351,7 @@ class MainActivity : AppCompatActivity() {
         gamesContainer.visibility = View.GONE
         swipeRefresh.visibility = View.VISIBLE
         resultText.visibility = View.VISIBLE
-        teamSpinner.visibility = View.VISIBLE
+        spinnersRow.visibility = View.VISIBLE
         playerSpinner.visibility = View.VISIBLE
         val numberedTeams = allNFLTeams.mapIndexed { index, team -> "${index + 1}. $team" }
         val teamAdapter = ArrayAdapter(this, R.layout.spinner_item, numberedTeams)
@@ -375,8 +367,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun setPredictMode() {
         currentMode = "PREDICT"
-        teamSpinner.visibility = View.GONE
-        playerSpinner.visibility = View.GONE
+        spinnersRow.visibility = View.GONE
         swipeRefresh.visibility = View.GONE
         gamesContainer.visibility = View.VISIBLE
         gamesList.removeAllViews()

@@ -24,10 +24,12 @@
         android:text="Loading scores..." />
 
     <LinearLayout
+        android:id="@+id/spinnersRow"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="horizontal"
-        android:layout_marginTop="6dp">
+        android:layout_marginTop="6dp"
+        android:visibility="gone">
 
         <Spinner
             android:id="@+id/teamSpinner"
@@ -89,15 +91,7 @@
         android:layout_weight="1"
         android:orientation="vertical"
         android:layout_marginTop="4dp"
-        android:visibility="gone">
-
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/backFromGamesButton"
-            android:layout_width="match_parent"
-            android:layout_height="48dp"
-            android:text="BACK TO TEAMS"
-            android:textSize="13sp"
-            android:backgroundTint="#e94560" />
+        android:visibility="visible">
 
         <ScrollView
             android:id="@+id/gamesScroll"
