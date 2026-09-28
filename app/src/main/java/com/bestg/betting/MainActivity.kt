@@ -91,16 +91,24 @@ class MainActivity : AppCompatActivity() {
 
 
         findViewById<MaterialButton>(R.id.testButton).setOnClickListener { testConnection() }
-        findViewById<MaterialButton>(R.id.loadStatsButton).setOnClickListener { setStatsMode() }
-        findViewById<MaterialButton>(R.id.loadPlayerButton).setOnClickListener { setPlayerMode() }
-        findViewById<MaterialButton>(R.id.predictButton).setOnClickListener { setPredictMode() }
+        findViewById<MaterialButton>(R.id.loadStatsButton).setOnClickListener { findViewById<MaterialButton>(R.id.refreshAllButton).text = "REFRESH"; setStatsMode() }
+        findViewById<MaterialButton>(R.id.loadPlayerButton).setOnClickListener { findViewById<MaterialButton>(R.id.refreshAllButton).text = "REFRESH"; setPlayerMode() }
+        findViewById<MaterialButton>(R.id.predictButton).setOnClickListener { findViewById<MaterialButton>(R.id.refreshAllButton).text = "REFRESH"; setPredictMode() }
         findViewById<MaterialButton>(R.id.refreshAllButton).setOnClickListener {
-            when (currentMode) {
-                "STATS" -> getTeamStats()
-                "PLAYER" -> getPlayerStats()
-                "PREDICT" -> fetchPrediction(currentTeam, opponentTeam)
+            if (currentMode == "PREDICT" && gamesContainer.visibility == View.GONE) {
+                // Act as BACK button
+                gamesContainer.visibility = View.VISIBLE
+                swipeRefresh.visibility = View.GONE
+                findViewById<MaterialButton>(R.id.refreshAllButton).text = "REFRESH"
+                setPredictMode()
+            } else {
+                when (currentMode) {
+                    "STATS" -> getTeamStats()
+                    "PLAYER" -> getPlayerStats()
+                    "PREDICT" -> fetchPrediction(currentTeam, opponentTeam)
+                }
+                fetchLiveScores()
             }
-            fetchLiveScores()
         }
         findViewById<MaterialButton>(R.id.clearButton).setOnClickListener { resultText.text = "" }
         findViewById<MaterialButton>(R.id.helpButton).setOnClickListener { showHelp() }
@@ -492,6 +500,8 @@ class MainActivity : AppCompatActivity() {
                         resultText.visibility = View.VISIBLE
                         resultText.text = "Analyzing ${g.away_full} @ ${g.home_full}..."
                         fetchPrediction(g.home_full, g.away_full)
+                        // Re-enable back button
+                        findViewById<MaterialButton>(R.id.refreshAllButton).text = "← BACK"
                     }
                     gamesList.addView(card)
                 }
