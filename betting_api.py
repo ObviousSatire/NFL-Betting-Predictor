@@ -1038,7 +1038,15 @@ def upcoming_games():
             away = next((x for x in comps if x.get('homeAway') == 'away'), comps[1])
             hs = int(home.get('score', 0) or 0)
             as_ = int(away.get('score', 0) or 0)
-            game_date = event.get('date', '')
+            game_date_raw = event.get('date', '')
+            # Convert UTC to US Eastern
+            try:
+                from datetime import datetime, timedelta
+                dt = datetime.strptime(game_date_raw.replace('Z', ''), '%Y-%m-%dT%H:%M')
+                dt_eastern = dt - timedelta(hours=4)  # EDT offset
+                game_date = dt_eastern.strftime('%Y-%m-%dT%H:%M:%S')
+            except:
+                game_date = game_date_raw
             home_abbr = home.get('team', {}).get('abbreviation', '')
             away_abbr = away.get('team', {}).get('abbreviation', '')
             home_name = home.get('team', {}).get('displayName', '')
