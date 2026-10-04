@@ -111,10 +111,8 @@ class MainActivity : AppCompatActivity() {
             }
         }
         findViewById<MaterialButton>(R.id.clearButton).setOnClickListener { resultText.text = "" }
-        findViewById<MaterialButton>(R.id.helpButton).setOnClickListener { showHelp() }
-        findViewById<MaterialButton>(R.id.helpButton).setOnLongClickListener {
+        findViewById<MaterialButton>(R.id.helpButton).setOnClickListener {
             showOptionsDialog()
-            true
         }
 
         setPredictMode()
@@ -156,12 +154,13 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showOptionsDialog() {
-        val options = mutableListOf("Change Server IP", "Toggle Favorite Team", "View Prediction Accuracy", "View Prediction Log", "Live Game Predictions", "Betting Odds", "Player Props")
+        val options = mutableListOf("Show Help", "Change Server IP", "Toggle Favorite Team", "View Prediction Accuracy", "View Prediction Log", "Live Game Predictions", "Betting Odds", "Player Props")
         if (currentMode == "STATS") options.add("Manual Override Stats")
         AlertDialog.Builder(this)
             .setTitle("Options")
             .setItems(options.toTypedArray()) { _, which ->
                 when (options[which]) {
+                    "Show Help" -> showHelp()
                     "Change Server IP" -> showServerIpDialog()
                     "Toggle Favorite Team" -> toggleFavorite()
                     "View Prediction Accuracy" -> showAccuracy()
