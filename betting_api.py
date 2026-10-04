@@ -23,6 +23,8 @@ ODDS_API_KEY = "daebc38f7fa4559b6d3f77a82a1a16dc"
 
 cache = {}
 cache_timeout = 300
+market_cache = {"data": None, "time": 0}
+MARKET_CACHE_TTL = 300
 ESPN_SITE_V2 = "https://site.api.espn.com/apis/site/v2/sports/football/nfl"
 
 # Manual overrides storage
@@ -742,6 +744,16 @@ def predict_winner():
     final1 = max(14, int(round(pred1)))
     final2 = max(14, int(round(pred2)))
     
+    # Never predict a tie - NFL ties are extremely rare
+    if final1 == final2:
+        if prob1 > prob2:
+            final1 += 1
+        elif prob2 > prob1:
+            final2 += 1
+        else:
+            # Absolute tie in probability - give home team the edge
+            final1 += 1
+    
     spread = final1 - final2
     total = final1 + final2
     if spread > 0:
@@ -1237,6 +1249,18 @@ def predict_with_market():
     if not team1 or not team2:
         return jsonify({"error": "Invalid teams"}), 400
     
+    # Auto-resolve any pending predictions first
+    try:
+        check_results_internal()
+    except:
+        pass
+    
+    # Force refresh market data
+    try:
+        market_cache["time"] = 0
+    except:
+        pass
+    
     # Call predict internally
     try:
         inner = predict_winner()
@@ -1259,9 +1283,21 @@ def predict_with_market():
     try:
         odds_url = "https://api.the-odds-api.com/v4/sports/americanfootball_nfl/odds"
         odds_params = {"apiKey": ODDS_API_KEY, "regions": "us", "markets": "spreads,totals,h2h", "oddsFormat": "american"}
-        odds_resp = requests.get(odds_url, params=odds_params, timeout=10)
-        if odds_resp.status_code == 200:
-            for og in odds_resp.json():
+        # Cache market data for 5 min
+        import time as time_mod
+        if market_cache["data"] is None or time_mod.time() - market_cache["time"] > MARKET_CACHE_TTL:
+            try:
+                _r = requests.get(odds_url, params=odds_params, timeout=10)
+                if _r.status_code == 200:
+                    market_cache["data"] = _r.json()
+                    market_cache["time"] = time_mod.time()
+                    print(f"[ODDS] Fetched {len(market_cache['data'])} games")
+                else:
+                    print(f"[ODDS] API returned {_r.status_code}")
+            except Exception as e:
+                print(f"[ODDS] Failed: {e}")
+        if market_cache["data"]:
+            for og in market_cache["data"]:
                 oh = og.get('home_team', '')
                 oa = og.get('away_team', '')
                 if (oh == team1 and oa == team2) or (oh == team2 and oa == team1):
@@ -1300,6 +1336,31 @@ def predict_with_market():
     pred['market_home_prob'] = market_home_prob
     pred['edge'] = edge
     
+    # Blend market into our prediction (market is generally more accurate)
+    if market_home_prob is None:
+        # No market anchor - cap confidence low, don't trust model alone
+        pred['confidence'] = min(pred.get('confidence', 0), 15.0)
+        pred['confidence_level'] = "LOW"
+    
+    if market_home_prob is not None:
+        model_prob = pred.get('team1_win_probability', 50.0)
+        # Weight market more when we disagree heavily
+        edge_abs = abs(edge) if edge is not None else 0
+        if edge_abs >= 15:
+            market_weight = 0.85
+        elif edge_abs >= 10:
+            market_weight = 0.75
+        elif edge_abs >= 5:
+            market_weight = 0.65
+        else:
+            market_weight = 0.55
+        model_weight = 1 - market_weight
+        blended_prob = model_prob * model_weight + market_home_prob * market_weight
+        pred['blended_home_prob'] = round(blended_prob, 1)
+        pred['blended_away_prob'] = round(100 - blended_prob, 1)
+        pred['predicted_winner'] = team1 if blended_prob > 50 else team2
+        pred['confidence'] = round(abs(blended_prob - 50) * 2, 1)
+    
     # Auto-log
     try:
         history = load_prediction_history()
@@ -1330,6 +1391,100 @@ def prediction_log():
     history = load_prediction_history()
     recent = sorted(history, key=lambda x: x.get('timestamp', 0), reverse=True)[:50]
     return jsonify({"log": recent, "total": len(history)})
+
+
+def check_results_internal():
+    """Scan completed games and mark predictions"""
+    history = load_prediction_history()
+    try:
+        data = requests.get(f"{ESPN_SITE_V2}/scoreboard?dates=2026", timeout=10).json()
+    except:
+        return
+    final_games = []
+    for event in data.get('events', []):
+        status = event.get('status', {}).get('type', {})
+        if not status.get('completed'):
+            continue
+        comps = event.get('competitions', [{}])[0].get('competitors', [])
+        if len(comps) < 2: continue
+        home = next((x for x in comps if x.get('homeAway') == 'home'), comps[0])
+        away = next((x for x in comps if x.get('homeAway') == 'away'), comps[1])
+        hs = int(home.get('score', 0) or 0)
+        as_ = int(away.get('score', 0) or 0)
+        winner = home.get('team', {}).get('displayName') if hs > as_ else away.get('team', {}).get('displayName')
+        final_games.append({
+            "home": home.get('team', {}).get('displayName', ''),
+            "away": away.get('team', {}).get('displayName', ''),
+            "winner": winner,
+            "score": f"{as_}-{hs}",
+            "home_score": hs,
+            "away_score": as_
+        })
+    updated = 0
+    for h in history:
+        if h.get('correct') is not None: continue
+        for fg in final_games:
+            if (h.get('team1') == fg['home'] and h.get('team2') == fg['away']) or \
+               (h.get('team1') == fg['away'] and h.get('team2') == fg['home']):
+                h['actual_winner'] = fg['winner']
+                h['actual_score'] = fg['score']
+                h['correct'] = (h.get('predicted_winner') == fg['winner'])
+                # Track if market was correct too
+                if h.get('market_home_prob') is not None:
+                    if h['market_home_prob'] > 50:
+                        h['market_pick'] = h.get('team1')
+                    else:
+                        h['market_pick'] = h.get('team2')
+                    h['market_correct'] = (h.get('market_pick') == fg['winner'])
+                updated += 1
+                break
+    if updated > 0:
+        save_prediction_history(history)
+    return updated
+
+
+
+@app.route('/model_report', methods=['GET'])
+def model_report():
+    """Detailed accuracy report - model vs market"""
+    history = load_prediction_history()
+    resolved = [h for h in history if h.get('correct') is not None]
+    
+    model_correct = sum(1 for h in resolved if h.get('correct'))
+    model_acc = round(model_correct / len(resolved) * 100, 1) if resolved else 0
+    
+    market_picks = [h for h in resolved if h.get('market_correct') is not None]
+    market_correct = sum(1 for h in market_picks if h.get('market_correct'))
+    market_acc = round(market_correct / len(market_picks) * 100, 1) if market_picks else 0
+    
+    # Edge buckets
+    edge_5_plus = [h for h in resolved if h.get('edge') and h.get('edge') >= 5]
+    edge_neg_5 = [h for h in resolved if h.get('edge') and h.get('edge') <= -5]
+    edge_small = [h for h in resolved if h.get('edge') and abs(h.get('edge')) < 5]
+    
+    return jsonify({
+        "total_resolved": len(resolved),
+        "model_accuracy": model_acc,
+        "model_correct": model_correct,
+        "market_accuracy": market_acc,
+        "market_correct": market_correct,
+        "market_picks": len(market_picks),
+        "big_edge_positive": {
+            "count": len(edge_5_plus),
+            "correct": sum(1 for h in edge_5_plus if h.get('correct')),
+            "accuracy": round(sum(1 for h in edge_5_plus if h.get('correct')) / len(edge_5_plus) * 100, 1) if edge_5_plus else 0
+        },
+        "big_edge_negative": {
+            "count": len(edge_neg_5),
+            "correct": sum(1 for h in edge_neg_5 if h.get('correct')),
+            "accuracy": round(sum(1 for h in edge_neg_5 if h.get('correct')) / len(edge_neg_5) * 100, 1) if edge_neg_5 else 0
+        },
+        "small_edge": {
+            "count": len(edge_small),
+            "correct": sum(1 for h in edge_small if h.get('correct')),
+            "accuracy": round(sum(1 for h in edge_small if h.get('correct')) / len(edge_small) * 100, 1) if edge_small else 0
+        }
+    })
 
 if __name__ == "__main__":
     print("NFL API Running on http://localhost:5000")
