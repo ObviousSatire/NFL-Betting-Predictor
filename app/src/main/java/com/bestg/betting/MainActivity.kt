@@ -159,16 +159,20 @@ class MainActivity : AppCompatActivity() {
         AlertDialog.Builder(this)
             .setTitle("Options")
             .setItems(options.toTypedArray()) { _, which ->
-                when (options[which]) {
-                    "Show Help" -> showHelp()
-                    "Change Server IP" -> showServerIpDialog()
-                    "Toggle Favorite Team" -> toggleFavorite()
-                    "View Prediction Accuracy" -> showAccuracy()
-                    "View Prediction Log" -> showPredictionLog()
-                    "Live Game Predictions" -> showLivePredictions()
-                    "Betting Odds" -> showOdds()
-                    "Player Props" -> showPlayerProps()
-                    "Manual Override Stats" -> showManualOverrideDialog()
+                try {
+                    when (options[which]) {
+                        "Show Help" -> showHelp()
+                        "Change Server IP" -> showServerIpDialog()
+                        "Toggle Favorite Team" -> toggleFavorite()
+                        "View Prediction Accuracy" -> showAccuracy()
+                        "View Prediction Log" -> showPredictionLog()
+                        "Live Game Predictions" -> showLivePredictions()
+                        "Betting Odds" -> showOdds()
+                        "Player Props" -> showPlayerProps()
+                        "Manual Override Stats" -> showManualOverrideDialog()
+                    }
+                } catch (e: Exception) {
+                    resultText.text = "Menu error: " + e.message
                 }
             }.show()
     }
