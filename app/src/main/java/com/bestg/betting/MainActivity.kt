@@ -154,7 +154,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showOptionsDialog() {
-        val options = mutableListOf("Show Help", "Change Server IP", "Toggle Favorite Team", "View Prediction Accuracy", "View Prediction Log", "Live Game Predictions", "Betting Odds", "Player Props")
+        val options = mutableListOf("Show Help", "Change Server IP", "View Prediction Accuracy", "View Prediction Log")
         if (currentMode == "STATS") options.add("Manual Override Stats")
         AlertDialog.Builder(this)
             .setTitle("Options")
