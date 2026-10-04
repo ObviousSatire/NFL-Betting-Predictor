@@ -156,53 +156,100 @@ class MainActivity : AppCompatActivity() {
     private var optionsDialog: AlertDialog? = null
     
     private fun showOptionsDialog() {
-        // Show menu as text in resultText instead of dialog
         if (currentMode == "PREDICT") {
             swipeRefresh.visibility = View.GONE
             gamesContainer.visibility = View.GONE
         }
         resultText.visibility = View.VISIBLE
-        resultText.text = """
-            MENU
-            ==============================
-            
-            1. Show Help
-            2. Change Server IP
-            3. View Prediction Accuracy
-            4. View Prediction Log
-            5. Live Game Predictions
-            6. Betting Odds
-            7. Player Props
-            
-            Type a number in the box below or tap the matching button
-        """.trimIndent()
         
-        // Use a simple input dialog
         val input = EditText(this)
-        input.hint = "Enter 1-7"
+        input.hint = "1-7"
         input.inputType = android.text.InputType.TYPE_CLASS_NUMBER
         AlertDialog.Builder(this)
-            .setTitle("Enter option number")
+            .setTitle("1=Help 2=IP 3=Accuracy 4=Log 5=Live 6=Odds 7=Props")
             .setView(input)
             .setPositiveButton("Go") { _, _ ->
-                try {
-                    when (input.text.toString().trim()) {
-                        "1" -> showHelp()
-                        "2" -> showServerIpDialog()
-                        "3" -> showAccuracy()
-                        "4" -> showPredictionLog()
-                        "5" -> showLivePredictions()
-                        "6" -> showOdds()
-                        "7" -> showPlayerProps()
-                    }
-                } catch (e: Exception) {
-                    resultText.text = "Error: " + e.message
+                val choice = input.text.toString().trim()
+                // Test mode - just show which was picked, no network
+                resultText.text = "You picked: " + choice + "\n\nNow testing network..."
+                when (choice) {
+                    "1" -> showHelp()
+                    "2" -> showServerIpDialog()
+                    "3" -> testNetworkAccuracy()
+                    "4" -> testNetworkLog()
+                    "5" -> testNetworkLive()
+                    "6" -> testNetworkOdds()
+                    "7" -> testNetworkProps()
                 }
             }
             .setNegativeButton("Cancel", null)
             .show()
     }
-
+    
+    private fun testNetworkAccuracy() {
+        resultText.text = "Testing /prediction_accuracy..."
+        apiService.getAccuracy().enqueue(object : Callback<AccuracyResponse> {
+            override fun onResponse(call: Call<AccuracyResponse>, response: Response<AccuracyResponse>) {
+                resultText.text = "SUCCESS\nTotal: ${response.body()?.total_predictions}\nCorrect: ${response.body()?.correct}\nAccuracy: ${response.body()?.accuracy}%"
+            }
+            override fun onFailure(call: Call<AccuracyResponse>, t: Throwable) {
+                resultText.text = "FAILED: ${t.message}"
+            }
+        })
+    }
+    
+    private fun testNetworkLog() {
+        resultText.text = "Testing /prediction_log..."
+        apiService.getPredictionLog().enqueue(object : Callback<PredictionLogResponse> {
+            override fun onResponse(call: Call<PredictionLogResponse>, response: Response<PredictionLogResponse>) {
+                resultText.text = "SUCCESS\nTotal: ${response.body()?.total}"
+            }
+            override fun onFailure(call: Call<PredictionLogResponse>, t: Throwable) {
+                resultText.text = "FAILED: ${t.message}"
+            }
+        })
+    }
+    
+    private fun testNetworkLive() {
+        resultText.text = "Testing /live_prediction..."
+        apiService.getLivePredictions().enqueue(object : Callback<LivePredictionResponse> {
+            override fun onResponse(call: Call<LivePredictionResponse>, response: Response<LivePredictionResponse>) {
+                resultText.text = "SUCCESS\nLive games: ${response.body()?.live?.size}"
+            }
+            override fun onFailure(call: Call<LivePredictionResponse>, t: Throwable) {
+                resultText.text = "FAILED: ${t.message}"
+            }
+        })
+    }
+    
+    private fun testNetworkOdds() {
+        resultText.text = "Testing /odds..."
+        apiService.getOdds().enqueue(object : Callback<OddsResponse> {
+            override fun onResponse(call: Call<OddsResponse>, response: Response<OddsResponse>) {
+                resultText.text = "SUCCESS\nOdds count: ${response.body()?.odds?.size}"
+            }
+            override fun onFailure(call: Call<OddsResponse>, t: Throwable) {
+                resultText.text = "FAILED: ${t.message}"
+            }
+        })
+    }
+    
+    private fun testNetworkProps() {
+        if (currentPlayer.isEmpty() || currentTeam.isEmpty()) {
+            resultText.text = "Select a player first"
+            return
+        }
+        resultText.text = "Testing /player_props..."
+        apiService.getPlayerProps(currentPlayer, currentTeam).enqueue(object : Callback<PlayerPropsResponse> {
+            override fun onResponse(call: Call<PlayerPropsResponse>, response: Response<PlayerPropsResponse>) {
+                resultText.text = "SUCCESS\nProps: ${response.body()?.props?.size}"
+            }
+            override fun onFailure(call: Call<PlayerPropsResponse>, t: Throwable) {
+                resultText.text = "FAILED: ${t.message}"
+            }
+        })
+    }
+    
     private fun toggleFavorite() {
         if (currentTeam.isEmpty()) return
         if (favoriteTeams.contains(currentTeam)) {
