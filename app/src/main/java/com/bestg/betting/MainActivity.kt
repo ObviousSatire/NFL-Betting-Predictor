@@ -156,11 +156,14 @@ class MainActivity : AppCompatActivity() {
     private fun showOptionsDialog() {
         val options = mutableListOf("Show Help", "Change Server IP", "View Prediction Accuracy", "View Prediction Log")
         if (currentMode == "STATS") options.add("Manual Override Stats")
-        AlertDialog.Builder(this)
-            .setTitle("Options")
-            .setItems(options.toTypedArray()) { _, which ->
+        val builder = AlertDialog.Builder(this)
+        builder.setTitle("Options")
+        builder.setItems(options.toTypedArray()) { dialog, which ->
+            dialog.dismiss()
+            val selected = options[which]
+            Handler(Looper.getMainLooper()).postDelayed({
                 try {
-                    when (options[which]) {
+                    when (selected) {
                         "Show Help" -> showHelp()
                         "Change Server IP" -> showServerIpDialog()
                         "Toggle Favorite Team" -> toggleFavorite()
@@ -174,7 +177,9 @@ class MainActivity : AppCompatActivity() {
                 } catch (e: Exception) {
                     resultText.text = "Menu error: " + e.message
                 }
-            }.show()
+            }, 100)
+        }
+        builder.show()
     }
 
     private fun toggleFavorite() {
