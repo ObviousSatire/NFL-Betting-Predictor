@@ -113,7 +113,26 @@ class MainActivity : AppCompatActivity() {
         }
         findViewById<MaterialButton>(R.id.clearButton).setOnClickListener { resultText.text = "" }
         findViewById<MaterialButton>(R.id.helpButton).setOnClickListener {
-            showHelp()
+            // Always hide games container so we can show text
+            gamesContainer.visibility = View.GONE
+            swipeRefresh.visibility = View.VISIBLE
+            resultText.visibility = View.VISIBLE
+            helpCycle = (helpCycle + 1) % 7
+            when (helpCycle) {
+                0 -> showHelp()
+                1 -> showAccuracy()
+                2 -> showPredictionLog()
+                3 -> showLivePredictions()
+                4 -> showOdds()
+                5 -> {
+                    if (currentPlayer.isEmpty()) {
+                        resultText.text = "Select a player first in PLAYER mode\n\nTap HELP again to continue"
+                    } else {
+                        showPlayerProps()
+                    }
+                }
+                6 -> showServerIpDialog()
+            }
         }
 
         setPredictMode()
