@@ -153,33 +153,54 @@ class MainActivity : AppCompatActivity() {
         })
     }
 
+    private var optionsDialog: AlertDialog? = null
+    
     private fun showOptionsDialog() {
-        val options = mutableListOf("Show Help", "Change Server IP", "View Prediction Accuracy", "View Prediction Log")
-        if (currentMode == "STATS") options.add("Manual Override Stats")
-        val builder = AlertDialog.Builder(this)
-        builder.setTitle("Options")
-        builder.setItems(options.toTypedArray()) { dialog, which ->
-            dialog.dismiss()
-            val selected = options[which]
-            Handler(Looper.getMainLooper()).postDelayed({
+        // Show menu as text in resultText instead of dialog
+        if (currentMode == "PREDICT") {
+            swipeRefresh.visibility = View.GONE
+            gamesContainer.visibility = View.GONE
+        }
+        resultText.visibility = View.VISIBLE
+        resultText.text = """
+            MENU
+            ==============================
+            
+            1. Show Help
+            2. Change Server IP
+            3. View Prediction Accuracy
+            4. View Prediction Log
+            5. Live Game Predictions
+            6. Betting Odds
+            7. Player Props
+            
+            Type a number in the box below or tap the matching button
+        """.trimIndent()
+        
+        // Use a simple input dialog
+        val input = EditText(this)
+        input.hint = "Enter 1-7"
+        input.inputType = android.text.InputType.TYPE_CLASS_NUMBER
+        AlertDialog.Builder(this)
+            .setTitle("Enter option number")
+            .setView(input)
+            .setPositiveButton("Go") { _, _ ->
                 try {
-                    when (selected) {
-                        "Show Help" -> showHelp()
-                        "Change Server IP" -> showServerIpDialog()
-                        "Toggle Favorite Team" -> toggleFavorite()
-                        "View Prediction Accuracy" -> showAccuracy()
-                        "View Prediction Log" -> showPredictionLog()
-                        "Live Game Predictions" -> showLivePredictions()
-                        "Betting Odds" -> showOdds()
-                        "Player Props" -> showPlayerProps()
-                        "Manual Override Stats" -> showManualOverrideDialog()
+                    when (input.text.toString().trim()) {
+                        "1" -> showHelp()
+                        "2" -> showServerIpDialog()
+                        "3" -> showAccuracy()
+                        "4" -> showPredictionLog()
+                        "5" -> showLivePredictions()
+                        "6" -> showOdds()
+                        "7" -> showPlayerProps()
                     }
                 } catch (e: Exception) {
-                    resultText.text = "Menu error: " + e.message
+                    resultText.text = "Error: " + e.message
                 }
-            }, 100)
-        }
-        builder.show()
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
     }
 
     private fun toggleFavorite() {
